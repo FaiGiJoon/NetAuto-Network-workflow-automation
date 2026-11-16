@@ -1,0 +1,10 @@
+site: amsterdam
+code: ams
+vlans:
+  - id: 10
+    name: ams-mgmt
+    description: Management network
+    subnet: 10.20.10.0/24
+    gateway: 10.20.10.1
+    gateway_device: ams-core-01
+    devices: [ams-core-01]

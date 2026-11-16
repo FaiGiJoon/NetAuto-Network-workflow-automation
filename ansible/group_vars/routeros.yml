@@ -1,0 +1,6 @@
+# MikroTik RouterOS over SSH.
+ansible_connection: ansible.netcommon.network_cli
+ansible_network_os: community.routeros.routeros
+# "+cet1024w" turns off colours and sets a wide terminal, so Ansible can read the output.
+ansible_user: "{{ lookup('env', 'NET_USER') }}+cet1024w"
+ansible_password: "{{ lookup('env', 'NET_PASSWORD') }}"

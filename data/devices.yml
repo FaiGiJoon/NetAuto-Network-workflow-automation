@@ -1,0 +1,25 @@
+# Every network device the pipeline manages.
+# platform: routeros (MikroTik) or ios (Cisco IOS / IOS-XE)
+# l3: true if the device can be the gateway (VLAN interface with an IP) for a VLAN
+devices:
+  - name: utr-core-01
+    site: utrecht
+    platform: routeros
+    mgmt_ip: 10.255.10.1
+    l3: true
+    bridge: bridge            # RouterOS bridge the VLAN interfaces hang on
+    trunk_ports: [ether2]     # ports that carry all site VLANs tagged
+
+  - name: utr-sw-01
+    site: utrecht
+    platform: ios
+    mgmt_ip: 10.255.10.2
+    l3: false
+    trunk_ports: [GigabitEthernet1/0/48]
+
+  - name: ams-core-01
+    site: amsterdam
+    platform: ios
+    mgmt_ip: 10.255.20.1
+    l3: true
+    trunk_ports: [GigabitEthernet1/0/1]

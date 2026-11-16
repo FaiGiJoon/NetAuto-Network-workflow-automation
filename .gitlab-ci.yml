@@ -1,0 +1,117 @@
+# Network change pipeline
+#
+#   merge request:  validate -> plan                (plan.md shows exactly what will change)
+#   main branch:    validate -> plan -> deploy (manual button) -> verify
+#   any time:       rollback (manual button on main)
+#
+# Required CI/CD variables (Settings > CI/CD > Variables, masked + protected):
+#   NET_USER, NET_PASSWORD, NET_ENABLE_PASSWORD (Cisco, optional)
+#   SSH_KNOWN_HOSTS   type "File": the SSH host keys of all devices
+#   GIT_PUSH_TOKEN    project access token with write_repository (moves the "deployed" tag)
+# Optional:
+#   OXIDIZED_URL, OXIDIZED_USER, OXIDIZED_PASSWORD
+#   LIBRENMS_URL, LIBRENMS_TOKEN
+#   NETBOX_URL, NETBOX_TOKEN
+
+stages: [validate, plan, deploy, verify, rollback]
+
+variables:
+  GIT_DEPTH: "0"                 # full history: the plan compares commits
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  PLAN_FILE: "$CI_PROJECT_DIR/build/plan.json"
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+default:
+  image: python:3.12-slim
+  cache:
+    key: pip
+    paths: [.cache/pip]
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq --no-install-recommends git openssh-client >/dev/null
+    - pip install -q -r requirements.txt
+
+.network_access: &network_access
+  - pip install -q -r requirements-deploy.txt
+  - ansible-galaxy collection install -r ansible/requirements.yml >/dev/null
+  - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+  - cp "$SSH_KNOWN_HOSTS" ~/.ssh/known_hosts && chmod 600 ~/.ssh/known_hosts
+
+# 2. Checks: YAML syntax, naming rules, VLAN IDs, IP conflicts, unsafe characters.
+validate:
+  stage: validate
+  script:
+    - python scripts/validate.py
+    - python -m unittest discover -s tests
+
+plan:
+  stage: plan
+  script:
+    - BASE="$(sh scripts/ci_deployed_ref.sh)"
+    - echo "Devices are currently on ${BASE:-nothing (first run)}"
+    - python scripts/plan.py --base "$BASE" --out build
+  artifacts:
+    expose_as: "Network change plan"
+    paths: [build/plan.md, build/plan.json, build/commands/]
+    expire_in: 30 days
+
+# 3. Push to the devices. Manual button, main only, one pipeline at a time.
+deploy:
+  stage: deploy
+  needs: [plan]
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+  allow_failure: false
+  environment: production
+  resource_group: network
+  script:
+    - *network_access
+    - cd ansible && ansible-playbook deploy.yml && cd ..
+    - sh scripts/ci_mark_deployed.sh "$CI_COMMIT_SHA"
+  artifacts:
+    when: always
+    paths: [build/backups/]
+    expire_in: 90 days
+
+# 4. Oxidized backs up the new config, LibreNMS confirms the devices are up, NetBox is updated.
+verify:
+  stage: verify
+  needs: [plan, deploy]
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  resource_group: network
+  script:
+    - python scripts/oxidized_backup.py
+    - python scripts/librenms_check.py
+    - python scripts/netbox_sync.py
+
+# 5. Roll back. Default: back to the commit that was on the devices before the last deploy.
+#    To pick another commit: "Run pipeline" on main with ROLLBACK_TO=<commit sha>.
+#    Afterwards, also revert the bad merge request in Git, so main matches the devices again.
+rollback:
+  stage: rollback
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+  allow_failure: true
+  environment: production
+  resource_group: network
+  script:
+    - *network_access
+    - BASE="$(sh scripts/ci_deployed_ref.sh)"
+    - TARGET="${ROLLBACK_TO:-$(sh scripts/ci_deployed_ref.sh previous-deployed)}"
+    - '[ -n "$TARGET" ] || { echo "No previous deployment to roll back to. Set ROLLBACK_TO."; exit 1; }'
+    - echo "Rolling back from $BASE to $TARGET"
+    - python scripts/plan.py --base "$BASE" --target "$TARGET" --out build
+    - cd ansible && ansible-playbook deploy.yml && cd ..
+    - sh scripts/ci_mark_deployed.sh "$TARGET"
+    - python scripts/oxidized_backup.py
+    - python scripts/librenms_check.py
+  artifacts:
+    when: always
+    paths: [build/]
+    expire_in: 90 days

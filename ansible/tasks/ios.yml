@@ -1,0 +1,39 @@
+---
+- name: Apply and verify
+  block:
+    - name: Push the planned config (backs up the running config first)
+      cisco.ios.ios_config:
+        src: "{{ commands_dir }}/{{ inventory_hostname }}.cfg"
+        backup: true
+        backup_options:
+          dir_path: "{{ backup_dir }}"
+          filename: "{{ inventory_hostname }}-pre-{{ change_id }}.cfg"
+        save_when: modified
+      register: applied
+
+    - name: Read the VLAN table
+      cisco.ios.ios_command:
+        commands: ["show vlan brief"]
+      register: vlans
+
+    - name: Check that new and changed VLANs are there
+      ansible.builtin.assert:
+        that: "item in vlans.stdout[0]"
+        fail_msg: "VLAN {{ item }} is missing on {{ inventory_hostname }} after the change"
+        quiet: true
+      loop: "{{ device_plan.verify_present }}"
+
+    - name: Check that removed VLANs are gone
+      ansible.builtin.assert:
+        that: "vlans.stdout[0] is not search('(?m)^' ~ item ~ '\\s')"
+        fail_msg: "VLAN {{ item }} is still on {{ inventory_hostname }}"
+        quiet: true
+      loop: "{{ device_plan.verify_absent }}"
+
+  rescue:
+    - name: Stop and explain how to roll back
+      ansible.builtin.fail:
+        msg: >-
+          The change FAILED on {{ inventory_hostname }}. No other devices were touched after this one.
+          The config from before the change is in build/backups/{{ inventory_hostname }}-pre-{{ change_id }}.cfg.
+          Roll back: run the 'rollback' job in GitLab.

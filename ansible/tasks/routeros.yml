@@ -1,0 +1,58 @@
+---
+- name: Back up the router before the change (on the device)
+  community.routeros.command:
+    commands:
+      - "/system backup save name=netauto-pre-{{ change_id }} dont-encrypt=yes"
+      - "/export file=netauto-pre-{{ change_id }}"
+
+- name: Read the full config for the local backup
+  community.routeros.command:
+    commands: ["/export"]
+  register: pre_export
+
+- name: Save the backup next to the plan (kept as a CI artifact)
+  ansible.builtin.copy:
+    content: "{{ pre_export.stdout[0] }}\n"
+    dest: "{{ backup_dir }}/{{ inventory_hostname }}-pre-{{ change_id }}.rsc"
+    mode: "0600"
+  delegate_to: localhost
+
+- name: Apply and verify
+  block:
+    - name: Apply the planned commands
+      community.routeros.command:
+        commands: "{{ device_plan.commands }}"
+      register: applied
+      # RouterOS prints errors instead of returning an error code, so read the output.
+      failed_when: >-
+        applied.failed | default(false) or
+        (applied.stdout | select('search', '(?i)failure:|syntax error|bad command|expected end of command|invalid value|no such item|ambiguous value')
+         | list | length > 0)
+
+    - name: Read the VLANs this pipeline manages
+      community.routeros.command:
+        commands: ['/interface vlan print terse where comment~"netauto"']
+      register: after
+
+    - name: Check that new and changed VLANs are there
+      ansible.builtin.assert:
+        that: "after.stdout[0] is search('name=\"?' ~ item ~ '\"?(\\s|$)')"
+        fail_msg: "VLAN {{ item }} is missing on {{ inventory_hostname }} after the change"
+        quiet: true
+      loop: "{{ device_plan.verify_present }}"
+
+    - name: Check that removed VLANs are gone
+      ansible.builtin.assert:
+        that: "after.stdout[0] is not search('vlan-id=' ~ item ~ '(\\s|$)')"
+        fail_msg: "VLAN {{ item }} is still on {{ inventory_hostname }}"
+        quiet: true
+      loop: "{{ device_plan.verify_absent }}"
+
+  rescue:
+    - name: Stop and explain how to roll back
+      ansible.builtin.fail:
+        msg: >-
+          The change FAILED on {{ inventory_hostname }}. No other devices were touched after this one.
+          Output: {{ applied.stdout | default('no output') }}.
+          Roll back: run the 'rollback' job in GitLab, or on the router:
+          /system backup load name=netauto-pre-{{ change_id }} (restores and reboots).

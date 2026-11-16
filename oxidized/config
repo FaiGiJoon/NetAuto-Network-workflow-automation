@@ -1,0 +1,49 @@
+# Example Oxidized config (~/.config/oxidized/config or /etc/oxidized/config).
+# Every device config is stored in a Git repo, one commit per change,
+# so you can always see and restore the previous version.
+---
+username: netauto-backup          # read-only user on the devices
+password: change-me               # better: use an environment variable or vault
+model: ios
+interval: 3600                    # normal backup every hour; the pipeline also triggers one
+use_syslog: false
+debug: false
+threads: 10
+timeout: 30
+retries: 3
+prompt: !ruby/regexp /^([\w.@-]+[#>]\s?)$/
+rest: 127.0.0.1:8888              # REST API the pipeline uses (put a reverse proxy with auth in front)
+next_adds_job: true
+vars:
+  remove_secret: true             # strip passwords from stored configs
+input:
+  default: ssh
+  ssh:
+    secure: true                  # check SSH host keys
+output:
+  default: git
+  git:
+    user: Oxidized
+    email: oxidized@example.internal
+    repo: /var/lib/oxidized/configs.git
+    single_repo: true
+source:
+  default: csv
+  csv:
+    file: /etc/oxidized/router.db   # generate with: python scripts/oxidized_routerdb.py
+    delimiter: !ruby/regexp /:/
+    map:
+      name: 0
+      ip: 1
+      model: 2
+      group: 3
+model_map:
+  cisco: ios
+  mikrotik: routeros
+hooks:
+  push_to_gitlab:                 # optional: mirror the config history to GitLab
+    type: githubrepo
+    events: [post_store]
+    remote_repo: git@gitlab.example.internal:network/oxidized-configs.git
+    publickey: /var/lib/oxidized/.ssh/id_ed25519.pub
+    privatekey: /var/lib/oxidized/.ssh/id_ed25519

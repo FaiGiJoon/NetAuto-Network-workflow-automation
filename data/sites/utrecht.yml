@@ -1,0 +1,21 @@
+site: utrecht
+code: utr            # every VLAN name at this site must start with "utr-"
+vlans:
+  - id: 10
+    name: utr-mgmt
+    description: Management network
+    subnet: 10.10.10.0/24
+    gateway: 10.10.10.1
+    gateway_device: utr-core-01
+    devices: [utr-core-01, utr-sw-01]
+
+  - id: 20
+    name: utr-cameras
+    description: IP cameras (Axis, Hanwha)
+    subnet: 10.10.20.0/24
+    gateway: 10.10.20.1
+    gateway_device: utr-core-01
+    devices: [utr-core-01, utr-sw-01]
+    dhcp:
+      start: 10.10.20.100
+      end: 10.10.20.200

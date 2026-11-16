@@ -1,0 +1,45 @@
+---
+# Pushes build/plan.json to the devices.
+#   cd ansible && ansible-playbook deploy.yml
+#   cd ansible && ansible-playbook deploy.yml --check     (dry run: shows the plan, pushes nothing)
+#
+# One device at a time (serial: 1). The first device that fails stops the
+# whole run, so a bad change never reaches more than one device.
+
+- name: Deploy planned network changes
+  hosts: all
+  gather_facts: false
+  serial: 1
+  max_fail_percentage: 0
+  vars:
+    plan_file: "{{ lookup('env', 'PLAN_FILE') | default(playbook_dir ~ '/../build/plan.json', true) }}"
+    commands_dir: "{{ plan_file | dirname }}/commands"
+    backup_dir: "{{ plan_file | dirname }}/backups"
+    change_id: "{{ lookup('env', 'CI_PIPELINE_ID') | default('manual', true) }}"
+
+  tasks:
+    - name: Load this device's part of the plan
+      ansible.builtin.set_fact:
+        device_plan: "{{ (lookup('ansible.builtin.file', plan_file) | from_json).devices[inventory_hostname] | default({}) }}"
+
+    - name: Skip devices without changes
+      ansible.builtin.meta: end_host
+      when: device_plan | length == 0
+
+    - name: Show what will change
+      ansible.builtin.debug:
+        msg:
+          - "ADD: {{ device_plan.add | map(attribute='name') | list }}"
+          - "CHANGE: {{ device_plan.change | map(attribute='new') | map(attribute='name') | list }}"
+          - "REMOVE: {{ device_plan.remove | map(attribute='name') | list }}"
+
+    - name: Make the local backup folder
+      ansible.builtin.file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: "0700"
+      delegate_to: localhost
+
+    - name: Run the platform tasks
+      ansible.builtin.include_tasks: "tasks/{{ netauto_platform }}.yml"
+      when: not ansible_check_mode
