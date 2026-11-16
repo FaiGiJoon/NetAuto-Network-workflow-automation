@@ -1,0 +1,39 @@
+groups:
+  - name: network
+    rules:
+      - alert: DeviceDown
+        expr: probe_success{job="icmp"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.device }} ({{ $labels.instance }}) does not answer ping"
+
+      - alert: PacketLoss
+        expr: avg_over_time(probe_success{job="icmp"}[5m]) < 0.9 and avg_over_time(probe_success{job="icmp"}[5m]) > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.instance }}: only {{ $value | humanizePercentage }} of pings succeed, check the link"
+
+      - alert: InterfaceDown
+        expr: ifOperStatus{job="snmp"} == 2 and on(instance, ifIndex) ifAdminStatus{job="snmp"} == 1
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.device }} {{ $labels.ifName }} is down but should be up"
+
+      - alert: InterfaceErrors
+        expr: rate(ifInErrors{job="snmp"}[5m]) + rate(ifOutErrors{job="snmp"}[5m]) > 1
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.device }} {{ $labels.ifName }} has {{ $value | humanize }} errors/s (cable or duplex?)"
+
+      - alert: LinkSaturated
+        expr: |
+          (rate(ifHCInOctets{job="snmp"}[5m]) * 8 / (ifHighSpeed{job="snmp"} * 1000000) > 0.9
+           and on(instance, ifIndex) ifHighSpeed{job="snmp"} > 0)
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.device }} {{ $labels.ifName }} is above 90% inbound"

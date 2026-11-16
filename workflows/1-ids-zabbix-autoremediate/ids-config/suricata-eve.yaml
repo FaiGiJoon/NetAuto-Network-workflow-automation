@@ -1,0 +1,9 @@
+# Part of /etc/suricata/suricata.yaml: write alerts as JSON lines to eve.json.
+outputs:
+  - eve-log:
+      enabled: yes
+      filetype: regular
+      filename: eve.json
+      types:
+        - alert:
+            tagged-packets: no

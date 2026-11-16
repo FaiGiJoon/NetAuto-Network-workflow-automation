@@ -1,0 +1,41 @@
+# Home lab: uptime checks + live traffic analysis + visual automation.
+#   cp .env.example .env   and fill it in
+#   docker compose up -d
+# Uptime Kuma: http://<host>:3001   n8n: http://<host>:5678   ntopng: http://<host>:3002
+
+services:
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    volumes: [uptime-kuma:/app/data]
+    ports: ["3001:3001"]
+    restart: unless-stopped
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    environment:
+      GENERIC_TIMEZONE: Europe/Amsterdam
+      N8N_SECURE_COOKIE: "false"            # LAN lab without HTTPS; put a reverse proxy with TLS in front otherwise
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false" # the workflow reads the secrets below with $env
+      MIKROTIK_BASIC_AUTH: ${MIKROTIK_BASIC_AUTH}   # base64 of user:password -> echo -n 'netops:pw' | base64
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+    volumes: [n8n:/home/node/.n8n]
+    ports: ["5678:5678"]
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    network_mode: host                      # ntopng needs host networking to see the traffic
+    command: ["redis-server", "--bind", "127.0.0.1", "--port", "6379"]
+    restart: unless-stopped
+
+  ntopng:
+    image: ntop/ntopng:stable
+    network_mode: host
+    command: ["-i", "${NTOPNG_INTERFACE:-eth0}", "-r", "127.0.0.1:6379", "-w", "3002"]
+    depends_on: [redis]
+    restart: unless-stopped
+
+volumes:
+  uptime-kuma:
+  n8n:

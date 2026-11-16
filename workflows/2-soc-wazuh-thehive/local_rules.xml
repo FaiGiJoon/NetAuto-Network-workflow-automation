@@ -1,0 +1,27 @@
+<!-- /var/ossec/etc/rules/local_rules.xml
+     Raise Suricata alerts to a level the integration acts on.
+     Rule 86601 is Wazuh's built-in "Suricata: Alert" rule. -->
+<group name="netops,suricata,">
+
+  <!-- Suricata severity 1 (highest) -> level 12 -->
+  <rule id="100200" level="12">
+    <if_sid>86601</if_sid>
+    <field name="alert.severity">^1$</field>
+    <description>Suricata high severity: $(alert.signature)</description>
+  </rule>
+
+  <!-- Same source triggers 10 alerts within 2 minutes -> level 10 -->
+  <rule id="100201" level="10" frequency="10" timeframe="120">
+    <if_matched_sid>86601</if_matched_sid>
+    <same_field>src_ip</same_field>
+    <description>Suricata: many alerts from $(src_ip)</description>
+  </rule>
+
+  <!-- Zeek notices about scans -> level 10 -->
+  <rule id="100202" level="10">
+    <decoded_as>json</decoded_as>
+    <field name="note">Scan::</field>
+    <description>Zeek: $(note) from $(src)</description>
+  </rule>
+
+</group>

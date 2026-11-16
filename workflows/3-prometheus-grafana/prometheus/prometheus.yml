@@ -1,0 +1,48 @@
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: [alertmanager:9093]
+
+scrape_configs:
+  # Interface counters, status and speed from switches and routers over SNMP.
+  - job_name: snmp
+    metrics_path: /snmp
+    params:
+      module: [if_mib]
+      auth: [public_v2]        # change to your own SNMP v2c/v3 auth in snmp.yml
+    file_sd_configs:
+      - files: [/etc/prometheus/targets/snmp.yml]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: snmp-exporter:9116
+
+  # Ping every device: up/down and packet loss.
+  - job_name: icmp
+    metrics_path: /probe
+    params:
+      module: [icmp]
+    scrape_interval: 15s
+    file_sd_configs:
+      - files: [/etc/prometheus/targets/icmp.yml]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: prometheus
+    static_configs:
+      - targets: [localhost:9090]

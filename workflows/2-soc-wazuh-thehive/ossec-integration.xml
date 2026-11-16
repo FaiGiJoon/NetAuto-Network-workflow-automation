@@ -1,0 +1,19 @@
+<!-- Add inside <ossec_config> in /var/ossec/etc/ossec.conf on the Wazuh manager. -->
+<!-- Level 10 and up goes to the SOAR script; lower alerts stay in the dashboard only. -->
+<integration>
+  <name>custom-netops-soar</name>
+  <level>10</level>
+  <alert_format>json</alert_format>
+</integration>
+
+<!-- Read Suricata's eve.json on the machine where Suricata runs (agent ossec.conf). -->
+<localfile>
+  <log_format>json</log_format>
+  <location>/var/log/suricata/eve.json</location>
+</localfile>
+
+<!-- Zeek logs in JSON (set "redef LogAscii::use_json = T;" in Zeek). -->
+<localfile>
+  <log_format>json</log_format>
+  <location>/opt/zeek/logs/current/notice.log</location>
+</localfile>

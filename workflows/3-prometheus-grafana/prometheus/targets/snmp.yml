@@ -1,0 +1,7 @@
+# Switches and routers polled over SNMP. Labels end up on every metric.
+- targets: [10.255.10.1]
+  labels: {device: utr-core-01, site: utrecht}
+- targets: [10.255.10.2]
+  labels: {device: utr-sw-01, site: utrecht}
+- targets: [10.255.20.1]
+  labels: {device: ams-core-01, site: amsterdam}

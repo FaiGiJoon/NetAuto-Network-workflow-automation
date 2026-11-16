@@ -1,0 +1,18 @@
+[Unit]
+Description=netops: sync CrowdSec bans to the MikroTik
+After=network-online.target crowdsec.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=netops
+EnvironmentFile=/etc/netops/env
+ExecStart=/usr/bin/python3 /opt/netauto/workflows/4-security-onion-crowdsec/crowdsec_mikrotik_bouncer.py
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/netops
+
+[Install]
+WantedBy=multi-user.target

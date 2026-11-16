@@ -1,0 +1,22 @@
+# systemd unit: keeps alert_watcher.py running and restarts it if it stops.
+# Install: copy to /etc/systemd/system/, put secrets in /etc/netops/env, then
+#   systemctl daemon-reload && systemctl enable --now netops-alert-watcher
+[Unit]
+Description=netops: block attackers seen by the IDS on the MikroTik
+After=network-online.target suricata.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=netops
+EnvironmentFile=/etc/netops/env
+ExecStart=/usr/bin/python3 /opt/netauto/workflows/1-ids-zabbix-autoremediate/alert_watcher.py --file /var/log/suricata/eve.json
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/netops
+ReadOnlyPaths=/var/log/suricata
+
+[Install]
+WantedBy=multi-user.target

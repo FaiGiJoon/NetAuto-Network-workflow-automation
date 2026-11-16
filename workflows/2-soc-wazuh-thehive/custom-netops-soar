@@ -1,0 +1,7 @@
+#!/bin/sh
+# Wazuh runs integrations named custom-* from /var/ossec/integrations/.
+# This wrapper loads the secrets and starts the Python script with the same arguments.
+set -a
+[ -f /etc/netops/env ] && . /etc/netops/env
+set +a
+exec /usr/bin/python3 "$(dirname "$0")/custom-netops-soar.py" "$@"

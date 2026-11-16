@@ -17,6 +17,19 @@ Every VLAN change goes through Git: you describe it in a YAML file, the pipeline
  5. rollback  ── manual button: back to the previous deployed commit
 ```
 
+## More workflows
+
+Besides changes, the repo has six setups for **running** the network. They all follow detect, decide, act, record, and share one safety library. Details are in [workflows/README.md](workflows/README.md).
+
+| # | Setup | What it automates |
+| --- | --- | --- |
+| 1 | [Snort/Suricata + Zabbix + MikroTik](workflows/1-ids-zabbix-autoremediate/) | Block attackers on the router, power-cycle dead PoE devices |
+| 2 | [Suricata + Zeek + Wazuh + TheHive + OPNsense](workflows/2-soc-wazuh-thehive/) | SOC: reputation check, block, case for an analyst |
+| 3 | [Prometheus + Grafana + Alertmanager](workflows/3-prometheus-grafana/) | Dashboards, alerts, automatic fixes and diagnostics |
+| 4 | [Security Onion + CrowdSec](workflows/4-security-onion-crowdsec/) | Full network security monitoring, community blocklists on the MikroTik |
+| 5 | [Enterprise reference](workflows/5-enterprise-reference/) | FortiGate, Splunk, PRTG, ServiceNow: the commercial tools for the same jobs |
+| 6 | [Uptime Kuma + ntopng + n8n](workflows/6-homelab-uptimekuma-n8n/) | Home lab: visual automation and Telegram alerts |
+
 ## Folder layout
 
 | Path | What it is |
@@ -32,7 +45,8 @@ Every VLAN change goes through Git: you describe it in a YAML file, the pipeline
 | `scripts/oxidized_routerdb.py` | Generates Oxidized's `router.db` from `devices.yml` |
 | `oxidized/config` | Example Oxidized config (Git output, REST API) |
 | `.gitlab-ci.yml` | The pipeline |
-| `tests/` | 26 tests for the checks and the plan |
+| `tests/` | 56 tests: the checks, the plan, and the workflows below |
+| `workflows/` | Six more automation setups for running the network (see below) |
 
 ## Example: add a VLAN for printers in Utrecht
 
@@ -113,4 +127,4 @@ The pipeline remembers what is on the devices with the Git tag `deployed`, and t
 - Manages VLANs, VLAN interfaces, trunk membership and DHCP. Routing, firewall rules and access ports are left alone. Those are the next things to add.
 - On Cisco, the first run assumes the trunk ports already exist. `switchport trunk allowed vlan add` does nothing on a trunk that allows all VLANs.
 - RouterOS stores the description only in Git and NetBox (the comment holds the `netauto` tag).
-- Tested here: the checks, the plan and the Oxidized, LibreNMS and NetBox scripts (against a fake server). The Ansible playbooks are written for `community.routeros` and `cisco.ios` but not yet run against real devices. Try them in a lab first (for example GNS3/EVE-NG or a spare MikroTik) with `ansible-playbook deploy.yml --check`.
+- Tested here: the checks, the plan, the Oxidized, LibreNMS and NetBox scripts, and the workflow scripts (against a fake server). The Ansible playbooks are written for `community.routeros` and `cisco.ios` but not yet run against real devices. Try them in a lab first (for example GNS3/EVE-NG or a spare MikroTik) with `ansible-playbook deploy.yml --check`.

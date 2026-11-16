@@ -1,0 +1,18 @@
+route:
+  receiver: remediation
+  group_by: [alertname, instance]   # one message per problem, not 50
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: remediation
+    webhook_configs:
+      - url: http://remediation:9095/alert
+        send_resolved: true
+
+inhibit_rules:
+  # If a device is down, don't also alert on its packet loss.
+  - source_matchers: [alertname = DeviceDown]
+    target_matchers: [alertname = PacketLoss]
+    equal: [instance]

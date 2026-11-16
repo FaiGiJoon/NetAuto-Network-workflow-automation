@@ -1,0 +1,191 @@
+{
+  "name": "netops: restart PoE device when Uptime Kuma says it is down",
+  "nodes": [
+    {
+      "id": "webhook",
+      "name": "Uptime Kuma webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "netops-uptime-kuma",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "uptime-kuma",
+        "responseMode": "onReceived",
+        "options": {}
+      }
+    },
+    {
+      "id": "map",
+      "name": "Find PoE port",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Which PoE port feeds which device. The names must match the monitor names in Uptime Kuma.\nconst ports = {\n  \"cam-utr-11\": { switch: \"10.255.10.1\", port: \"ether7\" },\n  \"cam-utr-12\": { switch: \"10.255.10.1\", port: \"ether8\" },\n  \"ap-living-room\": { switch: \"10.255.10.1\", port: \"ether3\" },\n};\nconst body = $json.body ?? $json;\nconst hb = body.heartbeat || {};\nconst mon = body.monitor || {};\nconst target = ports[mon.name] || {};\nreturn [{ json: {\n  device: mon.name || \"unknown\",\n  down: hb.status === 0,\n  msg: body.msg || hb.msg || \"\",\n  switch: target.switch || \"\",\n  port: target.port || \"\",\n} }];"
+      }
+    },
+    {
+      "id": "if",
+      "name": "Down and has PoE port?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "down-and-port",
+              "leftValue": "={{ $json.down && $json.port !== '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "poe",
+      "name": "MikroTik PoE power-cycle",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        -100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://{{ $json.switch }}/rest/interface/ethernet/poe/power-cycle",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Basic {{ $env.MIKROTIK_BASIC_AUTH }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ numbers: $json.port, duration: '5s' }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      }
+    },
+    {
+      "id": "notify-restart",
+      "name": "Notify restart",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        -100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: 'netops: ' + $('Find PoE port').item.json.device + ' was down, power-cycled ' + $('Find PoE port').item.json.port }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "notify-status",
+      "name": "Notify status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: 'netops: ' + $json.device + (($json.down) ? ' is DOWN (no PoE port to restart). ' : ' is back UP. ') + $json.msg }) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Uptime Kuma webhook": {
+      "main": [
+        [
+          {
+            "node": "Find PoE port",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find PoE port": {
+      "main": [
+        [
+          {
+            "node": "Down and has PoE port?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Down and has PoE port?": {
+      "main": [
+        [
+          {
+            "node": "MikroTik PoE power-cycle",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MikroTik PoE power-cycle": {
+      "main": [
+        [
+          {
+            "node": "Notify restart",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

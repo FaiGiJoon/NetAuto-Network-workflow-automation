@@ -1,0 +1,8 @@
+# Everything that should answer ping. poe_switch + poe_port tell the
+# remediation service which port to power-cycle when the device is down.
+- targets: [10.255.10.1, 10.255.10.2, 10.255.20.1]
+  labels: {role: network}
+- targets: [10.10.20.11]
+  labels: {device: cam-utr-11, role: camera, poe_switch: 10.255.10.1, poe_port: ether7}
+- targets: [10.10.20.12]
+  labels: {device: cam-utr-12, role: camera, poe_switch: 10.255.10.1, poe_port: ether8}

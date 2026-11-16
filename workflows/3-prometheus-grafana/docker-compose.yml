@@ -1,0 +1,69 @@
+# Metrics + dashboards + alerts + automatic fixes.
+#   cp ../env.example .env   (fill in MikroTik and notification settings)
+#   docker compose up -d
+# Grafana: http://<host>:3000 (admin / the password in .env)
+# Prometheus: http://<host>:9090   Alertmanager: http://<host>:9093
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=30d
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    ports: ["9090:9090"]
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    command: [--config.file=/etc/alertmanager/alertmanager.yml]
+    volumes:
+      - ./alertmanager:/etc/alertmanager:ro
+    ports: ["9093:9093"]
+    restart: unless-stopped
+
+  snmp-exporter:
+    image: prom/snmp-exporter:v0.26.0     # ships with the if_mib module and the public_v2 auth
+    ports: ["9116:9116"]
+    restart: unless-stopped
+
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.25.0
+    volumes:
+      - ./blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+    cap_add: [NET_RAW]                    # needed for ICMP ping
+    ports: ["9115:9115"]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-change-me}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports: ["3000:3000"]
+    restart: unless-stopped
+
+  remediation:
+    image: python:3.12-slim
+    working_dir: /app/workflows/3-prometheus-grafana
+    command: ["python", "remediation_receiver.py", "--listen", "0.0.0.0", "--port", "9095"]
+    env_file: .env
+    environment:
+      NETOPS_STATE_DIR: /state
+    volumes:
+      - ../..:/app:ro
+      - remediation-state:/state
+    expose: ["9095"]
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:
+  grafana-data:
+  remediation-state:
