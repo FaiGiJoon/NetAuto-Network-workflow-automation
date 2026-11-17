@@ -17,6 +17,15 @@ Every VLAN change goes through Git: you describe it in a YAML file, the pipeline
  5. rollback  ── manual button: back to the previous deployed commit
 ```
 
+## Download the programs
+
+Every workflow is also one ready-to-run program (Windows `.exe`, Linux, macOS, or `.pyz` for any system with Python). Run `setup`, answer a few questions, and it sets up the rest. See [apps/README.md](apps/README.md).
+
+```bash
+sudo ./netops-ids-linux-x86_64 setup          # or: netops-ids-windows-x86_64.exe setup
+netauto init my-network                       # a new, ready repo for VLAN changes
+```
+
 ## More workflows
 
 Besides changes, the repo has six setups for **running** the network. They all follow detect, decide, act, record, and share one safety library. Details are in [workflows/README.md](workflows/README.md).
@@ -45,7 +54,9 @@ Besides changes, the repo has six setups for **running** the network. They all f
 | `scripts/oxidized_routerdb.py` | Generates Oxidized's `router.db` from `devices.yml` |
 | `oxidized/config` | Example Oxidized config (Git output, REST API) |
 | `.gitlab-ci.yml` | The pipeline |
-| `tests/` | 56 tests: the checks, the plan, and the workflows below |
+| `tests/` | 63 tests: the checks, the plan, the workflows and the programs |
+| `apps/` | One program per workflow, with a setup wizard |
+| `tools/build_executables.py` | Builds the programs (PyInstaller or .pyz) |
 | `workflows/` | Six more automation setups for running the network (see below) |
 
 ## Example: add a VLAN for printers in Utrecht

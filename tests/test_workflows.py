@@ -52,9 +52,11 @@ class Fake:
         self.interfaces = {"ether2": {".id": "*2", "name": "ether2", "running": "true",
                                       "rx-error": "1532", "tx-error": "0", "link-downs": "7"}}
         self.crowdsec = {"new": [], "deleted": []}
+        self.cs_active = []
         self.abuse_score = 0
         self.opnsense = []
         self.thehive = []
+        self.raw_rules = []
         self._id = 0
 
     def next_id(self):
@@ -87,18 +89,35 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/rest/ip/firewall/address-list":
             rows = [r for r in f.address_list if all(r.get(k) == v for k, v in q.items())]
             return self._send(rows)
+        if url.path == "/rest/system/resource":
+            return self._send({"board-name": "hEX", "version": "7.16 (stable)"})
+        if url.path == "/rest/ip/firewall/raw":
+            return self._send([r for r in f.raw_rules if all(r.get(k) == v for k, v in q.items())])
+        if url.path.startswith("/api/firewall/alias_util/list/"):
+            return self._send({"rows": []})
+        if url.path == "/api/v1/user/current":
+            return self._send({"login": "netops"})
         if url.path == "/rest/interface":
             return self._send([v for v in f.interfaces.values() if v["name"] == q.get("name")])
         if url.path == "/v1/decisions/stream":
             if self.headers.get("X-Api-Key") != "bouncer-key":
                 return self._send({"message": "forbidden"}, 403)
-            out, f.crowdsec = f.crowdsec, {"new": [], "deleted": []}
-            return self._send(out)
+            # Like the real LAPI: startup=true = every active ban, otherwise only what changed.
+            pending, f.crowdsec = f.crowdsec, {"new": [], "deleted": []}
+            gone = {d["value"] for d in pending["deleted"]}
+            f.cs_active = [d for d in f.cs_active if d["value"] not in gone] + pending["new"]
+            if q.get("startup") == "true":
+                return self._send({"new": f.cs_active, "deleted": []})
+            return self._send(pending)
         if url.path == "/api/v2/check":
             return self._send({"data": {"ipAddress": q["ipAddress"], "abuseConfidenceScore": f.abuse_score}})
         self._send({"error": url.path}, 404)
 
     def do_PUT(self):
+        if self.path == "/rest/ip/firewall/raw":
+            row = {".id": self.fake.next_id(), **self._body()}
+            self.fake.raw_rules.append(row)
+            return self._send(row, 201)
         if self.path == "/rest/ip/firewall/address-list":
             row = {".id": self.fake.next_id(), **self._body()}
             self.fake.address_list.append(row)

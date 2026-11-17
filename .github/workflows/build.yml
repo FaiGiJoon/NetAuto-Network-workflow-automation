@@ -1,0 +1,65 @@
+# Builds one executable per workflow for Windows, Linux and macOS.
+#   - every push to main: build + test, files under the run's "Artifacts"
+#   - a tag like v1.0.0: also a GitHub Release with all files attached
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install pyyaml
+      - run: python scripts/validate.py
+      - run: python -m unittest discover -s tests -v
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install pyinstaller pyyaml
+      - name: Build executables
+        run: python tools/build_executables.py --platform-suffix --out dist
+      - name: Build .pyz programs (once, they run on every OS with Python)
+        if: matrix.os == 'ubuntu-latest'
+        run: python tools/build_executables.py --pyz --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: netops-${{ matrix.os }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {path: dist, merge-multiple: true}
+      - name: Checksums
+        run: cd dist && sha256sum * > SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
