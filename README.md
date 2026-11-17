@@ -54,7 +54,7 @@ Besides changes, the repo has six setups for **running** the network. They all f
 | `scripts/oxidized_routerdb.py` | Generates Oxidized's `router.db` from `devices.yml` |
 | `oxidized/config` | Example Oxidized config (Git output, REST API) |
 | `.gitlab-ci.yml` | The pipeline |
-| `tests/` | 63 tests: the checks, the plan, the workflows and the programs |
+| `tests/` | 71 tests: the checks, the plan, the workflows and the programs |
 | `apps/` | One program per workflow, with a setup wizard |
 | `tools/build_executables.py` | Builds the programs (PyInstaller or .pyz) |
 | `workflows/` | Six more automation setups for running the network (see below) |

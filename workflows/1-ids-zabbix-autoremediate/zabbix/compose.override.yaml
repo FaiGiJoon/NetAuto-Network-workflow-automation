@@ -1,0 +1,16 @@
+# Use with the official Zabbix Docker setup:
+#   git clone https://github.com/zabbix/zabbix-docker && cd zabbix-docker
+#   cp /opt/netauto/workflows/1-ids-zabbix-autoremediate/zabbix/compose.override.yaml .
+#   docker compose -f docker-compose_v3_ubuntu_pgsql_latest.yaml -f compose.override.yaml up -d
+#
+# Why: the Ubuntu-based server image (not Alpine) runs the netops-ids program,
+# scripts are switched on, and netops-ids + its config are mounted read-only.
+services:
+  zabbix-server:
+    environment:
+      ZBX_ENABLEGLOBALSCRIPTS: "1"
+      NETOPS_CONFIG: /etc/netops/env
+      NETOPS_STATE_DIR: /var/lib/zabbix/netops
+    volumes:
+      - /opt/netops:/opt/netops:ro      # netops-ids lives here: /opt/netops/netops-ids
+      - /etc/netops:/etc/netops:ro      # make /etc/netops/env readable for the container user (lab: chmod 644)

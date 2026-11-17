@@ -6,6 +6,8 @@ and power-cycle PoE devices that Zabbix reports as down.
   netops-ids run                   watch the alert file (what the service runs)
   netops-ids poe-restart --device cam-12 --switch 10.255.10.1 --port ether8
   netops-ids install-service       run in the background, start at boot
+  netops-ids install-suricata      install Suricata (OISF) with rules, daily updates and the mirror port
+  netops-ids zabbix-setup          create the PoE-restart script, action and hosts in Zabbix
 """
 
 from __future__ import annotations
@@ -45,7 +47,13 @@ def setup(args) -> int:
         result = ensure_raw_drop_rule(router, cfg["IDS_ADDRESS_LIST"], "netops: drop blocked sources")
         ok(f"drop rule {result}")
     if not Path(cfg["IDS_ALERT_FILE"]).exists():
-        warn(f"{cfg['IDS_ALERT_FILE']} does not exist yet. Install Suricata and turn on eve.json (see the README).")
+        warn(f"{cfg['IDS_ALERT_FILE']} does not exist yet.")
+        if not args.no_service and a.yes("Install and configure Suricata on this machine now (Ubuntu/Debian)?", True):
+            import _suricata
+            save_config(_suricata.install(a))
+    if not args.no_service and a.yes("Set up Zabbix (PoE restart script, action and hosts) through its API now?", False):
+        import _zabbix
+        save_config(_zabbix.setup(a, "/opt/netops/netops-ids"))
     step("Background service")
     if not args.no_service and a.yes("Install and start the background service now?", True):
         install_service(SERVICE, ["run"], "netops-ids: block attackers seen by the IDS", a)
@@ -119,8 +127,22 @@ def main(argv=None) -> int:
     p.add_argument("--duration", default="5s")
     p.add_argument("--max-per-day", type=int, default=3)
     sub.add_parser("install-service", help="run in the background")
+    i = sub.add_parser("install-suricata", help="install and configure Suricata (Ubuntu/Debian, root)")
+    i.add_argument("--yes", action="store_true")
+    z = sub.add_parser("zabbix-setup", help="create the PoE-restart script, action and hosts in Zabbix")
+    z.add_argument("--yes", action="store_true")
+    z.add_argument("--netops-path", default="/opt/netops/netops-ids",
+                   help="path to netops-ids as the Zabbix server sees it")
     args = ap.parse_args(argv)
     load_config()
+    if args.cmd == "install-suricata":
+        import _suricata
+        save_config(_suricata.install(Asker(args.yes)))
+        return 0
+    if args.cmd == "zabbix-setup":
+        import _zabbix
+        save_config(_zabbix.setup(Asker(args.yes), args.netops_path))
+        return 0
     if args.cmd == "install-service":
         return 0 if install_service(SERVICE, ["run"], "netops-ids: block attackers seen by the IDS", Asker(True)) else 1
     return {"setup": setup, "check": check, "run": run, "poe-restart": poe_restart}[args.cmd](args)

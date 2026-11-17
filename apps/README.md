@@ -5,7 +5,7 @@ Every workflow is also a single program. Download it, run `setup`, answer a few 
 | Program | Workflow | Most used commands |
 | --- | --- | --- |
 | `netauto` | VLAN changes through Git (repo root) | `init <folder>`, `validate`, `plan` |
-| `netops-ids` | [1. IDS + Zabbix](../workflows/1-ids-zabbix-autoremediate/) | `setup`, `check`, `run`, `poe-restart` |
+| `netops-ids` | [1. IDS + Zabbix](../workflows/1-ids-zabbix-autoremediate/) | `setup`, `check`, `run`, `install-suricata`, `zabbix-setup`, `poe-restart` |
 | `netops-soc` | [2. Wazuh SOC](../workflows/2-soc-wazuh-thehive/) | `setup`, `check`, `test`, `install-wazuh` |
 | `netops-metrics` | [3. Prometheus + Grafana](../workflows/3-prometheus-grafana/) | `setup`, `up`, `down`, `check` |
 | `netops-crowdsec` | [4. Security Onion + CrowdSec](../workflows/4-security-onion-crowdsec/) | `setup`, `check`, `run`, `sync-once` |
@@ -43,7 +43,7 @@ Windows may show a SmartScreen warning because the files are not code-signed. Ch
 
 | Program | Automatic steps |
 | --- | --- |
-| `netops-ids` | Finds the Suricata/Snort alert file, tests the MikroTik, adds the raw drop rule (once), installs the service, prints the Zabbix command |
+| `netops-ids` | Tests the MikroTik and adds the raw drop rule once. If Suricata is missing, it installs it from OISF, picks the mirror port, sets HOME_NET, adds the rules (suricata-update) with a nightly update, and starts it. It installs the service, and can create the Zabbix script, action and PoE hosts through the Zabbix API |
 | `netops-soc` | Tests AbuseIPDB, OPNsense and TheHive. On the Wazuh manager it also installs the integration, adds it to `ossec.conf` and the rules to `local_rules.xml` (with a backup), and restarts Wazuh |
 | `netops-metrics` | Asks for your devices (or imports `data/devices.yml`), writes a complete Docker folder (Prometheus, Alertmanager with a secret token, Grafana, SNMP, remediation service) and starts it |
 | `netops-crowdsec` | Registers the bouncer with `cscli` (no copying of keys), tests CrowdSec and the router, adds the drop rule, does a first sync, installs the service |
