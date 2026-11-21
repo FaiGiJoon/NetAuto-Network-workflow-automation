@@ -184,10 +184,10 @@ class ApiTests(ServerCase):
         self.assertEqual((status, body), (200, b"\x0a\x0d\x0d\x0a"))
 
     def test_fix_endpoint_previews_and_refuses_unknown(self):
-        status, body = self.api("POST", "/api/fix", {"action": "mt-upnp-off", "params": {}, "apply": False})
+        status, body = self.api("POST", "/api/fix", {"action": "mt-upnp-off", "params": {}, "mode": "preview"})
         self.assertEqual(status, 200)
-        self.assertIn("ip/upnp/set", body["commands"][0])
-        self.assertEqual(self.api("POST", "/api/fix", {"action": "nope", "apply": True})[0], 400)
+        self.assertEqual(body["steps"][0]["cli"], "/ip upnp set enabled=no")
+        self.assertEqual(self.api("POST", "/api/fix", {"action": "nope", "mode": "apply", "confirm": True})[0], 400)
         self.assertEqual(self.api("POST", "/api/jobs", {"kind": "install", "params": {"tool": "evil"}})[0], 400)
 
     def test_settings_round_trip_never_returns_secrets(self):
@@ -322,29 +322,45 @@ class EngineerTests(unittest.TestCase):
             self.assertIn(expected, titles)
         self.assertLess(rep.score(), 50)
 
-    def test_fix_preview_dry_run_and_apply(self):
+    def test_fix_needs_preview_dry_run_confirm_and_setting(self):
         import _engineer
         from _jobs import DebugLog
         log = DebugLog()
-        preview = _engineer.apply_fix("mt-service-off", {"name": "telnet"}, False, log)
-        self.assertFalse(preview["applied"])
-        self.assertIn("ip/service/telnet", preview["commands"][0])
-        dry = _engineer.apply_fix("mt-service-off", {"name": "telnet"}, True, log)
-        self.assertFalse(dry["applied"])
-        self.assertFalse([c for c in self.calls if c[0] == "PATCH"])
+        fix = ("mt-service-off", {"name": "telnet"})
+        preview = _engineer.apply_fix(*fix, "preview", False, log)
+        self.assertEqual(preview["steps"][0]["cli"], "/ip service disable telnet")
+        self.assertIn("PATCH /rest/ip/service", preview["steps"][0]["rest"])
+        self.assertFalse(self.calls, "a preview must not touch the router")
         os.environ["NETOPS_DRY_RUN"] = "false"
-        done = _engineer.apply_fix("mt-service-off", {"name": "telnet"}, True, log)
+        with self.assertRaisesRegex(tk.BadInput, "dry run"):            # apply without a dry run first
+            _engineer.apply_fix(*fix, "apply", True, log)
+        dry = _engineer.apply_fix(*fix, "dry-run", False, log)
+        self.assertEqual(dry["steps"][0]["current"], "false")           # read from the router
+        self.assertTrue(dry["steps"][0]["needed"])
+        self.assertFalse([c for c in self.calls if c[0] in ("PATCH", "POST") and "check-for-updates" not in c[1]])
+        with self.assertRaisesRegex(tk.BadInput, "confirmation"):        # apply without the confirmation box
+            _engineer.apply_fix(*fix, "apply", False, log)
+        os.environ["NETOPS_DRY_RUN"] = "true"
+        with self.assertRaisesRegex(tk.BadInput, "Dry run is on"):       # the setting still blocks it
+            _engineer.apply_fix(*fix, "apply", True, log)
+        self.assertEqual(self.state["ip/service"][0]["disabled"], "false")
+        os.environ["NETOPS_DRY_RUN"] = "false"
+        done = _engineer.apply_fix(*fix, "apply", True, log)
         self.assertTrue(done["applied"])
+        self.assertTrue(done["verified"], done)                          # read back from the router
+        self.assertEqual(done["steps"][0]["after"], "true")
         self.assertEqual(self.state["ip/service"][0]["disabled"], "true")
-        _engineer.apply_fix("mt-upnp-off", {}, True, log)
-        self.assertEqual(self.state["ip/upnp"]["enabled"], "no")
+        with self.assertRaisesRegex(tk.BadInput, "dry run"):            # a dry run is used up by one apply
+            _engineer.apply_fix(*fix, "apply", True, log)
+        _engineer.apply_fix("mt-upnp-off", {}, "dry-run", False, log)
+        self.assertTrue(_engineer.apply_fix("mt-upnp-off", {}, "apply", True, log)["verified"])
         found, _ = self.audit()
         self.assertNotIn("Service 'telnet' is enabled", found)
         self.assertNotIn("UPnP is enabled", found)
         with self.assertRaises(tk.BadInput):
-            _engineer.apply_fix("mt-service-off", {"name": "ssh"}, True, log)
+            _engineer.apply_fix("mt-service-off", {"name": "ssh"}, "preview", False, log)
         with self.assertRaises(tk.BadInput):
-            _engineer.apply_fix("rm-rf", {}, True, log)
+            _engineer.apply_fix("rm-rf", {}, "preview", False, log)
 
     def test_device_baseline(self):
         import _engineer
@@ -446,6 +462,47 @@ SSID 2 : Cafe
         if tk.find_tool("tshark"):
             cmd = tk.capture_cmd("1", 10, 5, "tcp port 443", Path("x.pcapng"))
             self.assertEqual(cmd[cmd.index("-f") + 1], "tcp port 443")
+
+
+class RulesTests(unittest.TestCase):
+    """The repo rules: no stand-ins or demo data in the app, one theme, every empty result explained."""
+
+    def test_app_never_uses_test_stand_ins_or_demo_data(self):
+        for folder in ("apps", "gui", "scripts"):
+            for f in (ROOT / folder).rglob("*"):
+                if f.suffix not in (".py", ".js", ".html"):
+                    continue
+                text = f.read_text(encoding="utf-8")
+                self.assertNotIn("fake_mikrotik", text, f)
+                self.assertNotIn("inventorySnapshot", text, f)
+                self.assertNotIn("Demo mode", text, f)
+
+    def test_tokyo_night_only(self):
+        html = (ROOT / "gui" / "index.html").read_text(encoding="utf-8")
+        css = (ROOT / "gui" / "styles.css").read_text(encoding="utf-8")
+        self.assertIn('data-style="omarchy"', html)
+        self.assertNotIn('id="theme-btn"', html)
+        self.assertNotIn('id="style-btn"', html)
+        for other in ("catppuccin", "everforest", "gruvbox", "nord", "Latte"):
+            self.assertNotIn(other, css)
+
+    def test_guides_are_labelled_as_examples(self):
+        html = (ROOT / "gui" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("It is not your network", html)
+
+    def test_failures_are_explained(self):
+        cases = [
+            ("nmap", "You requested a scan type which requires root privileges.\nQUITTING!", 1, {}, "administrator"),
+            ("nmap", "Nmap done: 256 IP addresses (0 hosts up)", 0, {"hosts": []}, "No device answered"),
+            ("capture", "Capturing on 'Wi-Fi'\n0 packets captured", 0, {"rows": []}, "No packets"),
+            ("ping", "Ping request could not find host nope.example. Please check the name and try again.", 1, {}, "resolved"),
+            ("ping", "100% packet loss", 1, {"loss_percent": 100.0}, "No replies"),
+            ("wifi", "Network shell commands need location permission to access WLAN information.", 1, {"networks": []}, "Location"),
+            ("git-pull", "fatal: could not read Username for 'https://github.com': terminal prompts disabled", 128, {}, "sign in"),
+        ]
+        for kind, text, rc, result, expected in cases:
+            self.assertIn(expected, tk.explain(kind, text, rc, result), (kind, text))
+        self.assertEqual(tk.explain("ping", "0% packet loss", 0, {"loss_percent": 0.0}), "")
 
 
 class PortFallbackTests(unittest.TestCase):

@@ -533,20 +533,4 @@ window.NETAUTO = {
       ],
     },
   ],
-
-  // Shown on the Inventory page when the console is opened without `netauto gui`.
-  inventorySnapshot: {
-    devices: [
-      { name: "utr-core-01", site: "utrecht", platform: "routeros", mgmt_ip: "10.255.10.1", l3: true, bridge: "bridge", trunk_ports: ["ether2"] },
-      { name: "utr-sw-01", site: "utrecht", platform: "ios", mgmt_ip: "10.255.10.2", l3: false, trunk_ports: ["GigabitEthernet1/0/48"] },
-      { name: "ams-core-01", site: "amsterdam", platform: "ios", mgmt_ip: "10.255.20.1", l3: true, trunk_ports: ["GigabitEthernet1/0/1"] },
-    ],
-    sites: [
-      { file: "data/sites/amsterdam.yml", site: "amsterdam", code: "ams", vlans: [
-        { id: 10, name: "ams-mgmt", description: "Management network", subnet: "10.20.10.0/24", gateway: "10.20.10.1", gateway_device: "ams-core-01", devices: ["ams-core-01"] } ] },
-      { file: "data/sites/utrecht.yml", site: "utrecht", code: "utr", vlans: [
-        { id: 10, name: "utr-mgmt", description: "Management network", subnet: "10.10.10.0/24", gateway: "10.10.10.1", gateway_device: "utr-core-01", devices: ["utr-core-01", "utr-sw-01"] },
-        { id: 20, name: "utr-cameras", description: "IP cameras (Axis, Hanwha)", subnet: "10.10.20.0/24", gateway: "10.10.20.1", gateway_device: "utr-core-01", devices: ["utr-core-01", "utr-sw-01"], dhcp: { start: "10.10.20.100", end: "10.10.20.200" } } ] },
-    ],
-  },
 };

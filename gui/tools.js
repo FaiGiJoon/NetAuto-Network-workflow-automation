@@ -251,7 +251,13 @@
   function resultHtml(tool, view) {
     if (!view) return "";
     const r = view.result;
+    const problem = r && r.problem ? `<div class="problem"><b>Why this did not work:</b> ${esc(r.problem)}</div>` : "";
+    return problem + resultBody(tool, view, r);
+  }
+
+  function resultBody(tool, view, r) {
     if (tool === "checkup" && r) return checkupHtml(r);
+    if (r && r.problem && !(r.networks || []).length && !(r.rows || []).length && !(r.hosts || []).length) return "";
     if (tool === "wifi" && r) return wifiHtml(r);
     if (tool === "nmap" && r) return nmapHtml(r);
     if (tool === "capture" && r) return captureHtml(r);
@@ -294,29 +300,49 @@
   }
 
   async function previewFix(action, title) {
-    const dlg = $("#jobdlg");
-    const apply = $("#jobdlg-apply");
+    const dlg = $("#jobdlg"), btn = $("#jobdlg-apply"), extra = $("#jobdlg-extra"), con = $("#jobdlg-console");
     $("#jobdlg-title").textContent = `Fix: ${title}`;
-    $("#jobdlg-state").textContent = "";
-    $("#jobdlg-console").textContent = "Loading…";
-    apply.hidden = true;
+    extra.innerHTML = ""; btn.hidden = true; btn.disabled = false; con.textContent = "Loading…";
     dlg.showModal();
+    const show = (r, note) => {
+      con.textContent = `${r.title}\n\n` + r.steps.map((st) =>
+        `RouterOS command:  ${st.cli}\nREST call sent:    ${st.rest}` +
+        (st.current !== undefined ? `\nRouter now:        ${st.current}    after the fix: ${st.target}${st.needed === false ? "   (already set)" : ""}` : "") +
+        (st.after !== undefined ? `\nRead back:         ${st.after}    ${st.ok ? "OK, verified" : "NOT as expected"}` : "")).join("\n\n") +
+        (note ? `\n\n${note}` : "");
+    };
+    const call = (mode, confirm = false) => api("api/fix", { action: action.id, params: action.params, mode, confirm });
     try {
-      const pv = await api("api/fix", { action: action.id, params: action.params, apply: false });
-      $("#jobdlg-console").textContent = `${pv.title}\n\nThe console will send these calls to your MikroTik:\n\n  ${pv.commands.join("\n  ")}\n\n` +
-        (pv.dry_run ? "Dry run is ON: clicking Apply only logs what would happen. Turn it off on the Settings page (Dry run = false) to really change the router."
-                    : "Dry run is OFF: clicking Apply changes the router now.");
-      $("#jobdlg-state").innerHTML = pv.dry_run ? '<span class="job-badge cancelled">dry run</span>' : '<span class="job-badge failed">live</span>';
-      apply.hidden = false;
-      apply.onclick = async () => {
-        apply.hidden = true;
+      const pv = await call("preview");
+      show(pv, "Step 1 of 2: dry run. It reads the current values from your router and changes nothing.");
+      $("#jobdlg-state").innerHTML = '<span class="job-badge">preview</span>';
+      btn.textContent = "Dry run"; btn.hidden = false;
+      btn.onclick = async () => {
+        btn.hidden = true;
         try {
-          const res = await api("api/fix", { action: action.id, params: action.params, apply: true });
-          $("#jobdlg-console").textContent += `\n\n${res.message}`;
-          $("#jobdlg-state").innerHTML = res.applied ? '<span class="job-badge done">applied</span>' : '<span class="job-badge cancelled">dry run</span>';
-        } catch (e) { $("#jobdlg-console").textContent += `\n\nFailed: ${errText(e)}`; }
+          const dr = await call("dry-run");
+          $("#jobdlg-state").innerHTML = '<span class="job-badge cancelled">dry run done</span>';
+          if (!dr.steps.some((st) => st.needed)) { show(dr, "Nothing to do: the router already has these values."); return; }
+          if (dr.dry_run_setting) {
+            show(dr, `${dr.message}\n\nStep 2 is blocked because Dry run is on in Settings (NETOPS_DRY_RUN=true). ` +
+              "Set it to false on the Settings page, then open this fix again to apply it.");
+            return;
+          }
+          show(dr, `${dr.message}\n\nStep 2 of 2: tick the box, then click "Apply to router".`);
+          extra.innerHTML = '<label class="confirm"><input type="checkbox" id="fix-confirm"> I have read the commands above and want to change my router now.</label>';
+          btn.textContent = "Apply to router"; btn.hidden = false; btn.disabled = true;
+          $("#fix-confirm").onchange = (e) => { btn.disabled = !e.target.checked; };
+          btn.onclick = async () => {
+            btn.hidden = true; extra.innerHTML = "";
+            try {
+              const ap = await call("apply", true);
+              show(ap, ap.message);
+              $("#jobdlg-state").innerHTML = ap.verified ? '<span class="job-badge done">applied and verified</span>' : '<span class="job-badge failed">check the router</span>';
+            } catch (e) { show(dr, `Not applied: ${errText(e)}`); }
+          };
+        } catch (e) { con.textContent = `Dry run failed: ${errText(e)}`; }
       };
-    } catch (e) { $("#jobdlg-console").textContent = errText(e); }
+    } catch (e) { con.textContent = errText(e); }
   }
 
   function wifiHtml(r) {

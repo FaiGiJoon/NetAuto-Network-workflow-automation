@@ -43,8 +43,7 @@
     collapsed: false,
     filter: "all",
     query: "",
-    theme: saved.theme || "dark",
-    look: ["tokyo-night", "catppuccin", "everforest", "gruvbox", "nord", "classic"].includes(saved.look) ? saved.look : "tokyo-night",
+    theme: "dark",                       // Omarchy, Tokyo Night: the only theme
     leftHidden: !!saved.leftHidden,
     bottomHidden: !!saved.bottomHidden,
     progress: saved.progress || {},
@@ -56,7 +55,7 @@
   let playTimer = null;
 
   const save = () => localStorage.setItem("netauto-gui", JSON.stringify({
-    sid: state.sid, speed: state.speed, view: state.view, theme: state.theme, look: state.look,
+    sid: state.sid, speed: state.speed, view: state.view, 
     leftHidden: state.leftHidden, bottomHidden: state.bottomHidden, progress: state.progress,
   }));
 
@@ -455,33 +454,6 @@
     render();
   }
 
-  function setTheme(t) {
-    state.theme = t;
-    document.documentElement.dataset.theme = t;
-    $("#theme-btn").setAttribute("aria-label", t === "dark" ? "Switch to light mode" : "Switch to dark mode");
-    save();
-    if (state.page === "workflows") render();
-  }
-
-  // Omarchy themes (tiling-window look) or the original Classic look.
-  const LOOKS = ["tokyo-night", "catppuccin", "everforest", "gruvbox", "nord", "classic"];
-  const LOOK_NAMES = { "tokyo-night": "Tokyo Night", catppuccin: "Catppuccin", everforest: "Everforest", gruvbox: "Gruvbox", nord: "Nord", classic: "Classic" };
-  function applyLook() {
-    const root = document.documentElement;
-    root.dataset.style = state.look === "classic" ? "classic" : "omarchy";
-    root.dataset.palette = state.look;
-    const next = LOOKS[(LOOKS.indexOf(state.look) + 1) % LOOKS.length];
-    $("#style-btn").setAttribute("aria-label", `Theme: ${LOOK_NAMES[state.look]}. Switch to ${LOOK_NAMES[next]}`);
-    $("#style-btn").title = `Theme: ${LOOK_NAMES[state.look]} (Y for ${LOOK_NAMES[next]})`;
-  }
-  function setLook(v) {
-    state.look = LOOKS.includes(v) ? v : "tokyo-night";
-    applyLook();
-    save();
-    toast(`Theme: ${LOOK_NAMES[state.look]}${state.look !== "classic" && state.theme === "light" ? " (light: Latte)" : ""}`);
-    if (state.page === "workflows") render();
-  }
-  const cycleLook = () => setLook(LOOKS[(LOOKS.indexOf(state.look) + 1) % LOOKS.length]);
   let toastTimer = null;
   function toast(text) {
     const el = $("#toast");
@@ -518,12 +490,12 @@
 
   // ------------------------------------------------------------------ pages
   function setPage(p) {
-    if (!["workflows", "tools", "inventory", "plan", "programs", "diagnostics", "settings"].includes(p)) p = "workflows";
+    if (!["workflows", "tools", "inventory", "plan", "programs", "diagnostics", "settings"].includes(p)) p = "tools";
     if (p !== "workflows") stop();
     state.page = p;
     $$(".tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.page === p)));
     $$(".page").forEach((el) => { el.hidden = el.id !== `page-${p}`; });
-    if (location.hash.slice(1) !== p) history.replaceState(null, "", p === "workflows" ? location.pathname : `#${p}`);
+    if (location.hash.slice(1) !== p) history.replaceState(null, "", p === "tools" ? location.pathname : `#${p}`);
     if (p === "workflows") render();
     if (p === "inventory") loadInventory();
     if (p === "plan") $("#plan-offline").hidden = state.live;
@@ -559,21 +531,23 @@
     state.live = live;
     const el = $("#conn");
     el.classList.toggle("live", live);
-    $("#conn-text").textContent = live ? `Live · netauto ${state.status.version}` : "Demo mode";
-    el.title = live ? `Repo: ${state.status.repo}` : "Start with `netauto gui` for live data, checks and plans";
+    $("#conn-text").textContent = live ? `Live · netauto ${state.status.version}` : "Not connected";
+    el.title = live ? `Repo: ${state.status.repo}` : "The local server is not running. Start it with: python apps/netauto_cli.py gui";
     if (state.page !== "workflows") setPage(state.page);
   }
 
   async function loadInventory() {
-    let data = D.inventorySnapshot, source = "A snapshot of the example data. Start the console with netauto gui to see your own repo.";
-    if (state.live) {
-      try {
-        const live = await api("api/inventory");
-        if (live.ok) { data = live; source = `Live from ${state.status.repo}`; }
-        else source = `Could not read the data: ${live.errors.join("; ")}`;
-      } catch { /* keep the snapshot */ }
-    }
-    $("#inv-source").textContent = source;
+    const empty = (msg) => {
+      $("#inv-source").textContent = msg;
+      $("#inv-stats").innerHTML = ""; $("#inv-devices").innerHTML = ""; $("#inv-sites").innerHTML = "";
+    };
+    if (!state.live) return empty("Not connected: start the console with python apps/netauto_cli.py gui to read data/devices.yml and data/sites/.");
+    let data;
+    try {
+      data = await api("api/inventory");
+    } catch (e) { return empty(`Could not read the inventory: ${e.message}`); }
+    if (!data.ok) return empty(`Could not read the data: ${data.errors.join("; ")}`);
+    $("#inv-source").textContent = `Read just now from ${state.status.repo}`;
     const vlanCount = data.sites.reduce((n, s) => n + s.vlans.length, 0);
     const perDev = {};
     data.sites.forEach((s) => s.vlans.forEach((v) => (v.devices || []).forEach((d) => { perDev[d] = (perDev[d] || 0) + 1; })));
@@ -647,8 +621,6 @@
   function bind() {
     $$(".tabs button, .brand").forEach((b) => b.addEventListener("click", (e) => { e.preventDefault(); setPage(b.dataset.page); }));
     window.addEventListener("hashchange", () => setPage(location.hash.slice(1)));
-    $("#theme-btn").addEventListener("click", () => setTheme(state.theme === "dark" ? "light" : "dark"));
-    $("#style-btn").addEventListener("click", cycleLook);
     $$(".seg button").forEach((b) => b.addEventListener("click", () => setView(b.dataset.view)));
 
     $("#side-list").addEventListener("click", (e) => {
@@ -719,9 +691,7 @@
       const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName);
       if (typing || $("#keys").open) return;
       if (e.key === "?") { $("#keys").showModal(); return; }
-      if (e.key.toLowerCase() === "t") return setTheme(state.theme === "dark" ? "light" : "dark");
-      if (e.key.toLowerCase() === "y") return cycleLook();
-      const pages = ["workflows", "tools", "inventory", "plan", "programs", "diagnostics", "settings"];
+      const pages = ["tools", "diagnostics", "settings", "inventory", "plan", "programs", "workflows"];
       if (/^[1-7]$/.test(e.key)) { e.preventDefault(); return setPage(pages[+e.key - 1]); }
       if (state.page !== "workflows") return;
       const order = D.scenarios.map((s) => s.id);
@@ -754,16 +724,14 @@
 
   // ------------------------------------------------------------------ start
   document.documentElement.dataset.theme = state.theme;
-  applyLook();
   tickClock();
   setInterval(tickClock, 15000);
-  $("#theme-btn").setAttribute("aria-label", state.theme === "dark" ? "Switch to light mode" : "Switch to dark mode");
   bind();
   applyLayout();
   $$(".seg button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.view === state.view)));
   $("#net").toggleAttribute("hidden", state.view !== "network");
   $("#seq").hidden = state.view !== "sequence";
-  setPage(location.hash.slice(1) || "workflows");
+  setPage(location.hash.slice(1) || "tools");
   checkLive();
   // Report browser errors to the debug log on the Diagnostics page.
   const reportError = (message, detail) => {
@@ -774,5 +742,5 @@
   window.addEventListener("error", (e) => reportError(e.message, `${e.filename}:${e.lineno}:${e.colno} ${(e.error && e.error.stack) || ""}`));
   window.addEventListener("unhandledrejection", (e) => reportError(`Unhandled: ${(e.reason && e.reason.message) || e.reason}`, e.reason && e.reason.stack));
 
-  window.NETAUTO_APP = { state, go: manual, select: selectScenario, setView, setTheme, setLook, setPage, toast, api, esc, $, $$, color, pname, PROTO };
+  window.NETAUTO_APP = { state, go: manual, select: selectScenario, setView, setPage, toast, api, esc, $, $$, color, pname, PROTO };
 })();

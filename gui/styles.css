@@ -648,7 +648,7 @@ dialog pre.console { max-height: 60vh; min-height: 200px; border-radius: 8px; }
  * Omarchy style: a tiling-window desktop look. Monospace everywhere,
  * flat tiles with square corners and a 2px border that lights up on
  * the active tile, a waybar-like top bar with numbered workspaces and
- * a clock. Palettes follow Omarchy's themes; light mode is Latte.
+ * a clock. Tokyo Night colours.
  * ================================================================== */
 @font-face { font-family: "JetBrains Mono"; src: url("fonts/jetbrains-mono-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
 @font-face { font-family: "JetBrains Mono"; src: url("fonts/jetbrains-mono-500.woff2") format("woff2"); font-weight: 500 600; font-display: swap; }
@@ -669,33 +669,6 @@ dialog pre.console { max-height: 60vh; min-height: 200px; border-radius: 8px; }
   --ink: #c0caf5; --text: #a9b1d6; --muted: #7c84ad; --faint: #565f89;
   --primary: #7aa2f7; --primary-ink: #16161e; --accent: #bb9af7;
   --ok: #9ece6a; --bad: #f7768e; --warn: #e0af68;
-}
-[data-style="omarchy"][data-palette="catppuccin"] {
-  --bg: #11111b; --panel: #1e1e2e; --panel-2: #181825; --line: #45475a; --line-2: #313244;
-  --ink: #cdd6f4; --text: #bac2de; --muted: #9399b2; --faint: #6c7086;
-  --primary: #89b4fa; --primary-ink: #11111b; --accent: #cba6f7; --ok: #a6e3a1; --bad: #f38ba8; --warn: #f9e2af;
-}
-[data-style="omarchy"][data-palette="everforest"] {
-  --bg: #1e2326; --panel: #2d353b; --panel-2: #343f44; --line: #475258; --line-2: #3d484d;
-  --ink: #d3c6aa; --text: #c5bea6; --muted: #9da9a0; --faint: #7a8478;
-  --primary: #a7c080; --primary-ink: #232a2e; --accent: #7fbbb3; --ok: #a7c080; --bad: #e67e80; --warn: #dbbc7f;
-}
-[data-style="omarchy"][data-palette="gruvbox"] {
-  --bg: #1d2021; --panel: #282828; --panel-2: #32302f; --line: #504945; --line-2: #3c3836;
-  --ink: #ebdbb2; --text: #d5c4a1; --muted: #a89984; --faint: #7c6f64;
-  --primary: #fabd2f; --primary-ink: #1d2021; --accent: #83a598; --ok: #b8bb26; --bad: #fb4934; --warn: #fe8019;
-}
-[data-style="omarchy"][data-palette="nord"] {
-  --bg: #242933; --panel: #2e3440; --panel-2: #3b4252; --line: #4c566a; --line-2: #3b4252;
-  --ink: #eceff4; --text: #d8dee9; --muted: #a3abb9; --faint: #6f7a90;
-  --primary: #88c0d0; --primary-ink: #2e3440; --accent: #b48ead; --ok: #a3be8c; --bad: #bf616a; --warn: #ebcb8b;
-}
-/* light mode in every Omarchy theme: Catppuccin Latte */
-[data-style="omarchy"][data-theme="light"] {
-  color-scheme: light;
-  --bg: #dce0e8; --panel: #eff1f5; --panel-2: #e6e9ef; --line: #bcc0cc; --line-2: #ccd0da;
-  --ink: #4c4f69; --text: #5c5f77; --muted: #6c6f85; --faint: #9ca0b0;
-  --primary: #1e66f5; --primary-ink: #eff1f5; --accent: #8839ef; --ok: #40a02b; --bad: #d20f39; --warn: #df8e1d;
 }
 /* derived colours, the same for every palette */
 [data-style="omarchy"] {
@@ -860,3 +833,10 @@ table.findings td.sev { width: 92px; }
 table.findings td { vertical-align: top; }
 table.findings .muted { margin: 2px 0 0; font-size: 12.5px; }
 @media (max-width: 1000px) { .score-row { grid-template-columns: 1fr; } }
+
+/* the Guides page is an illustration, never real data: say so plainly */
+.example-note { margin: 4px 0 2px; padding: 4px 8px; font-size: 12px; color: var(--warn); border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--panel)); background: var(--warn-soft); }
+.confirm { display: flex; gap: 8px; align-items: center; margin-top: 12px; font-size: 13px; color: var(--warn); }
+.confirm input { width: 16px; height: 16px; accent-color: var(--warn); }
+.problem { border: 2px solid var(--bad); background: var(--bad-soft); color: var(--ink); padding: 10px 14px; margin-bottom: 12px; font-size: 13px; }
+.problem b { color: var(--bad); }

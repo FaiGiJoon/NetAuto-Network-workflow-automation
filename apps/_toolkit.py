@@ -553,3 +553,74 @@ def open_in_wireshark(pcap: Path) -> str:
     kwargs = {"creationflags": 0x00000008 | 0x00000200} if IS_WINDOWS else {"start_new_session": True}
     subprocess.Popen([ws, "-r", str(pcap)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kwargs)
     return ws
+
+
+# ------------------------------------------------------------------ why did it not work?
+
+_ADMIN = ("Start the console from a terminal opened with 'Run as administrator'." if IS_WINDOWS
+          else "Run the console with sudo.")
+_NPCAP = ("Install Npcap from https://npcap.com (keep 'WinPcap API-compatible mode' ticked), then restart the console."
+          if IS_WINDOWS else "")
+
+
+def explain(kind: str, text: str, returncode: int | None, result: dict | None = None) -> str:
+    """Turn a tool's real output into: what went wrong and how to fix it. Empty when it worked."""
+    low = (text or "").lower()
+    result = result or {}
+    if kind == "nmap":
+        if "requires root privileges" in low or "requested scan type requires" in low:
+            return f"This scan type needs administrator rights. {_ADMIN}"
+        if "dnet: failed to open device" in low or "npcap" in low or "winpcap" in low or "pcap_open" in low:
+            return f"nmap cannot open the network card. {_NPCAP or _ADMIN}"
+        if "failed to resolve" in low:
+            return "nmap could not resolve that host name. Check the spelling, or use an IP address."
+        if returncode not in (0, None):
+            return f"nmap stopped with exit code {returncode}. The output below shows its message."
+        if not result.get("hosts"):
+            return ("No device answered. Check that the target is your own network (see 'This computer' on the left). "
+                    "Windows Firewall blocks ping by default: try 'Quick port scan', which also finds hosts that ignore ping.")
+    if kind == "capture":
+        if "npcap" in low or "wpcap" in low or "npf driver" in low or "packet.dll" in low:
+            return f"Capturing needs Npcap. {_NPCAP}" if IS_WINDOWS else "The capture library (libpcap) does not work: reinstall tshark."
+        if "permission" in low or "you don't have permission" in low or "operation not permitted" in low:
+            return ("No permission to capture on this card. " + (_ADMIN if IS_WINDOWS else
+                    "Run 'sudo usermod -aG wireshark $USER', log out and in again, or start the console with sudo."))
+        if "no such device" in low or "doesn't exist" in low or "invalid capture filter" in low:
+            return "tshark refused the interface or the filter. Pick another interface, or clear the filter."
+        if returncode not in (0, None) and not result.get("rows"):
+            return f"tshark stopped with exit code {returncode}. The output below shows its message."
+        if not result.get("rows"):
+            return ("No packets were captured. Pick the interface you really use (Wi-Fi or Ethernet, not a virtual or "
+                    "loopback adapter), make sure there is traffic, or clear the capture filter.")
+    if kind == "ping":
+        if "could not find host" in low or "unknown host" in low or "name or service not known" in low or "kan host" in low:
+            return "The host name could not be resolved: check the spelling, or your DNS (run the Network check-up)."
+        if "general failure" in low or "algemene fout" in low:
+            return "Windows reports 'General failure': the network adapter is down, or a VPN or firewall blocks it."
+        if result.get("loss_percent") == 100.0:
+            return ("No replies. The host is down, or it does not answer ping: Windows PCs block ping by default, "
+                    "and many routers block it on the WAN side.")
+    if kind == "traceroute":
+        if "unable to resolve" in low or "kan doelsysteemnaam" in low or "unknown host" in low:
+            return "The host name could not be resolved: check the spelling or your DNS."
+        hops = result.get("hops") or []
+        if hops and all(h.get("timeout") for h in hops):
+            return "No router on the way answered. A firewall may block the probes (ICMP), or there is no connection."
+    if kind == "wifi" and not result.get("networks"):
+        if "ssid" in low and "location" not in low:
+            return ("The Wi-Fi scanner answered but its output could not be read. The raw output is below; "
+                    "please send it so the parser can learn this format.")
+        return wifi_hint(text)
+    if kind in ("git-fetch", "git-pull"):
+        if "authentication failed" in low or "could not read username" in low or "terminal prompts disabled" in low:
+            return ("Git needs you to sign in. Run 'git fetch' once in a terminal in this folder: Git Credential Manager "
+                    "opens a browser to log in to GitHub. Then try again here.")
+        if "not possible to fast-forward" in low or "diverged" in low:
+            return "Your branch and the remote have both changed. Pull from a terminal and choose merge or rebase."
+        if "would be overwritten" in low or "commit your changes" in low:
+            return "You have local changes that a pull would overwrite. Commit or stash them first."
+        if "could not resolve host" in low or "unable to access" in low:
+            return "Git cannot reach the remote: check your internet connection, proxy or VPN."
+        if returncode not in (0, None):
+            return f"git stopped with exit code {returncode}. The output below shows its message."
+    return ""

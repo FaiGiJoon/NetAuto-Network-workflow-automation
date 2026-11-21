@@ -14,7 +14,7 @@ Job kinds: checkup (the automated network engineer), ping, traceroute, nmap, wif
 capture, install, diagnostics, tests, git-status, git-fetch, git-pull, github,
 zabbix, program (the check/test of each netops program).
 
-    POST /api/fix {"action", "params", "apply"}   preview or apply a check-up fix
+    POST /api/fix {"action", "params", "mode": preview|dry-run|apply, "confirm"}   a check-up fix
     POST /api/devices/accept                      remember the devices of the last check-up
 
 Safety: it only listens on 127.0.0.1, refuses requests whose Host header is not
@@ -160,6 +160,15 @@ class Api:
         return {"interfaces": items, "error": err}
 
     # ---------------------------------------------------------------- jobs
+    @staticmethod
+    def _explained(kind: str, fn=None):
+        """Wrap a result reader so every result says why it is empty or failed (rule: never an unexplained empty result)."""
+        def done(j):
+            res = (fn(j) if fn else None) or {}
+            res["problem"] = tk.explain(kind, "\n".join(j.lines), j.returncode, res)
+            return res
+        return done
+
     def start_job(self, kind: str, params: dict) -> dict:
         params = params if isinstance(params, dict) else {}
         jobs = self.jobs
@@ -168,14 +177,14 @@ class Api:
             count = tk.validate_int(params.get("count", 4), 1, 50, "Count")
             cmd = tk.ping_cmd(target, count)
             job = jobs.start_process("ping", f"Ping {target}", cmd, timeout=30 + count * 3,
-                                     on_done=lambda j: tk.parse_ping("\n".join(j.lines)),
+                                     on_done=self._explained("ping", lambda j: tk.parse_ping("\n".join(j.lines))),
                                      encoding=tk.console_encoding(cmd[0]), ok_codes=(0, 1))
         elif kind == "traceroute":
             target = tk.validate_target(params.get("target"), allow_network=False)
             hops = tk.validate_int(params.get("max_hops", 20), 1, 40, "Max hops")
             cmd = tk.trace_cmd(target, hops)
             job = jobs.start_process("traceroute", f"Trace route to {target}", cmd, timeout=240,
-                                     on_done=lambda j: {"hops": tk.parse_trace("\n".join(j.lines))},
+                                     on_done=self._explained("traceroute", lambda j: {"hops": tk.parse_trace("\n".join(j.lines))}),
                                      encoding=tk.console_encoding(cmd[0]), ok_codes=(0, 1))
         elif kind == "nmap":
             target = tk.validate_target(params.get("target"))
@@ -189,7 +198,7 @@ class Api:
                 finally:
                     xml_out.unlink(missing_ok=True)
             job = jobs.start_process("nmap", f"nmap {tk.NMAP_PROFILES[profile]['label'].lower()}: {target}", cmd,
-                                     timeout=1800, on_done=nmap_done)
+                                     timeout=1800, on_done=self._explained("nmap", nmap_done))
         elif kind == "wifi":
             cmd = tk.wifi_cmd()
 
@@ -200,7 +209,7 @@ class Api:
                 for n in nets:
                     n["connected"] = n["connected"] or (current is not None and n["ssid"] == current)
                 return {"networks": nets, "summary": tk.wifi_summary(nets), "hint": "" if nets else tk.wifi_hint(text)}
-            job = jobs.start_process("wifi", "Wi-Fi scan", cmd, timeout=60, on_done=wifi_done,
+            job = jobs.start_process("wifi", "Wi-Fi scan", cmd, timeout=60, on_done=self._explained("wifi", wifi_done),
                                      encoding=tk.console_encoding(cmd[0]))
         elif kind == "capture":
             if jobs.running("capture"):
@@ -220,7 +229,7 @@ class Api:
                 return {"file": out.name if out.exists() else "", "path": str(out) if out.exists() else "",
                         "rows": rows, "summary": tk.capture_summary(rows)}
             job = jobs.start_process("capture", f"Capture on {label}" + (f" ({bpf})" if bpf else ""), cmd,
-                                     timeout=seconds + 30, on_done=capture_done)
+                                     timeout=seconds + 30, on_done=self._explained("capture", capture_done))
         elif kind == "checkup":
             import _engineer
             opts = {k: bool(params.get(k, True)) for k in ("wifi", "devices", "mikrotik")}
@@ -250,7 +259,8 @@ class Api:
             if not git:
                 raise tk.BadInput(f"git was not found. {tk.hint('git')}")
             args = ["fetch", "--prune", "origin"] if kind == "git-fetch" else ["pull", "--ff-only"]
-            job = jobs.start_process(kind, f"git {' '.join(args)}", [git, *args], timeout=180, cwd=str(self.repo))
+            job = jobs.start_process(kind, f"git {' '.join(args)}", [git, *args], timeout=180, cwd=str(self.repo),
+                                     on_done=self._explained(kind))
         elif kind == "github":
             import _diag
             job = jobs.start_function("github", "GitHub overview", lambda j: _diag.github_overview(self.repo))
@@ -472,7 +482,7 @@ def make_handler(api: Api, gui_root: Path):
             if path == "/api/fix":
                 import _engineer
                 return self._json(200, _engineer.apply_fix(str(body.get("action", "")), body.get("params") or {},
-                                                           bool(body.get("apply")), api.log))
+                                                           str(body.get("mode", "preview")), body.get("confirm") is True, api.log))
             if path == "/api/devices/accept":
                 import _engineer
                 count = _engineer.save_baseline(api.last_devices)

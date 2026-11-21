@@ -481,50 +481,107 @@ FIXES = {
     "mt-neighbor-lan": "Limit neighbour discovery to the LAN list",
     "mt-macserver-lan": "Limit MAC Telnet and MAC Winbox to the LAN list",
 }
+DRY_RUN_VALID = 15 * 60          # an apply must follow a dry run of the same fix within 15 minutes
+_dry_runs: dict[str, float] = {}
 
 
-def fix_plan(action: str, params: dict) -> list[tuple[str, str, dict]]:
-    """The exact REST calls a fix makes: (method, path, body)."""
+def fix_plan(action: str, params: dict) -> list[dict]:
+    """Each step: the RouterOS command, the REST call that runs it, and where to read the value back."""
     if action == "mt-service-off":
         name = params.get("name")
         if name not in ("telnet", "ftp", "api", "www"):
             raise tk.BadInput("That service cannot be switched off from here.")
-        return [("PATCH", f"ip/service/{name}", {"disabled": "true"})]
+        return [{"cli": f"/ip service disable {name}", "method": "PATCH", "path": "ip/service", "by_name": name,
+                 "body": {"disabled": "true"}, "read": ("ip/service", name, "disabled")}]
     if action == "mt-upnp-off":
-        return [("POST", "ip/upnp/set", {"enabled": "no"})]
+        return [{"cli": "/ip upnp set enabled=no", "method": "POST", "path": "ip/upnp/set", "body": {"enabled": "no"},
+                 "read": ("ip/upnp", None, "enabled")}]
     if action == "mt-ssh-strong":
-        return [("POST", "ip/ssh/set", {"strong-crypto": "yes"})]
+        return [{"cli": "/ip ssh set strong-crypto=yes", "method": "POST", "path": "ip/ssh/set", "body": {"strong-crypto": "yes"},
+                 "read": ("ip/ssh", None, "strong-crypto")}]
     if action == "mt-neighbor-lan":
-        return [("POST", "ip/neighbor/discovery-settings/set", {"discover-interface-list": "LAN"})]
+        return [{"cli": "/ip neighbor discovery-settings set discover-interface-list=LAN", "method": "POST",
+                 "path": "ip/neighbor/discovery-settings/set", "body": {"discover-interface-list": "LAN"},
+                 "read": ("ip/neighbor/discovery-settings", None, "discover-interface-list")}]
     if action == "mt-macserver-lan":
-        return [("POST", "tool/mac-server/set", {"allowed-interface-list": "LAN"}),
-                ("POST", "tool/mac-server/mac-winbox/set", {"allowed-interface-list": "LAN"})]
+        return [{"cli": "/tool mac-server set allowed-interface-list=LAN", "method": "POST", "path": "tool/mac-server/set",
+                 "body": {"allowed-interface-list": "LAN"}, "read": ("tool/mac-server", None, "allowed-interface-list")},
+                {"cli": "/tool mac-server mac-winbox set allowed-interface-list=LAN", "method": "POST",
+                 "path": "tool/mac-server/mac-winbox/set", "body": {"allowed-interface-list": "LAN"},
+                 "read": ("tool/mac-server/mac-winbox", None, "allowed-interface-list")}]
     raise tk.BadInput("Unknown fix.")
 
 
-def apply_fix(action: str, params: dict, confirm: bool, log) -> dict:
-    plan = fix_plan(action, params if isinstance(params, dict) else {})
-    preview = [f"{m} /rest/{p} {json.dumps(b)}" for m, p, b in plan]
-    dry = os.environ.get("NETOPS_DRY_RUN", "true").lower() != "false"
-    out = {"action": action, "title": FIXES[action], "commands": preview, "dry_run": dry, "applied": False}
-    if not confirm:
+def _norm(value) -> str:
+    v = str(value).strip().lower()
+    return {"yes": "true", "no": "false"}.get(v, v)
+
+
+def _read(router, step: dict) -> str | None:
+    path, name, field = step["read"]
+    data = router.get(path, name=name) if name else router.get(path)
+    if isinstance(data, list):
+        data = data[0] if data else None
+    return None if data is None else data.get(field)
+
+
+def _key(action: str, params: dict) -> str:
+    return action + json.dumps(params, sort_keys=True)
+
+
+def apply_fix(action: str, params: dict, mode: str, confirm: bool, log) -> dict:
+    """mode 'preview': the commands only. 'dry-run': read the current values from the router, change nothing.
+    'apply': only after a dry run of the same fix, with confirm=True and NETOPS_DRY_RUN=false; reads back after."""
+    params = params if isinstance(params, dict) else {}
+    plan = fix_plan(action, params)
+    target = (lambda st: next(iter(st["body"].values())))
+    steps = [{"cli": st["cli"], "rest": f"{st['method']} /rest/{st['path']}" + (f" (item {st['by_name']})" if st.get("by_name") else "")
+              + f" {json.dumps(st['body'])}", "target": target(st)} for st in plan]
+    dry_setting = os.environ.get("NETOPS_DRY_RUN", "true").lower() != "false"
+    out = {"action": action, "title": FIXES[action], "steps": steps, "mode": mode, "dry_run_setting": dry_setting,
+           "applied": False, "verified": False}
+    if mode == "preview":
         return out
-    if dry:
-        out["message"] = "Dry run is on, so nothing was changed. Set 'Dry run' to false on the Settings page to apply fixes."
-        log.info("fix", f"dry run {action}: {'; '.join(preview)}")
-        return out
+    if mode not in ("dry-run", "apply"):
+        raise tk.BadInput("mode must be preview, dry-run or apply")
     router = _router()
-    for method, path, body in plan:
-        if method == "PATCH":
-            item = path.rsplit("/", 1)
-            found = router.get(item[0], name=item[1]) or []
+    for st, view in zip(plan, steps):
+        view["current"] = _read(router, st)
+        view["needed"] = _norm(view["current"]) != _norm(view["target"])
+    if mode == "dry-run":
+        _dry_runs[_key(action, params)] = time.time()
+        log.info("fix", f"dry run {action}: " + "; ".join(f"{v['cli']} (now {v['current']})" for v in steps))
+        out["message"] = ("Dry run: nothing was changed. " + ("Already done on the router." if not any(v["needed"] for v in steps)
+                          else "These values would change."))
+        return out
+    # apply
+    if not confirm:
+        raise tk.BadInput("Tick the confirmation box first.")
+    ran = _dry_runs.get(_key(action, params))
+    if not ran or time.time() - ran > DRY_RUN_VALID:
+        raise tk.BadInput("Run the dry run of this fix first (it is valid for 15 minutes).")
+    if dry_setting:
+        raise tk.BadInput("Dry run is on in Settings (NETOPS_DRY_RUN=true), so the console never changes the router. "
+                          "Set it to false on the Settings page to apply fixes.")
+    for st, view in zip(plan, steps):
+        if not view["needed"]:
+            continue
+        if st["method"] == "PATCH":
+            found = router.get(st["path"], name=st["by_name"]) or []
             if not found:
-                raise tk.BadInput(f"{item[1]} was not found on the router.")
-            router.update(item[0], found[0][".id"], body)
+                raise tk.BadInput(f"{st['by_name']} was not found on the router.")
+            router.update(st["path"], found[0][".id"], st["body"])
         else:
-            router.command(path, body)
-    log.warn("fix", f"applied {action}: {'; '.join(preview)}")
-    out.update(applied=True, message="Applied. Run the check-up again to confirm.")
+            router.command(st["path"], st["body"])
+        log.warn("fix", f"applied on the router: {view['cli']}  [{view['rest']}]")
+    for st, view in zip(plan, steps):
+        view["after"] = _read(router, st)
+        view["ok"] = _norm(view["after"]) == _norm(view["target"])
+    _dry_runs.pop(_key(action, params), None)
+    out["applied"] = True
+    out["verified"] = all(v["ok"] for v in steps)
+    out["message"] = ("Applied and verified: the router now reports the new values." if out["verified"]
+                      else "Applied, but the router does not report the expected value. Check it in Winbox.")
     return out
 
 
