@@ -5,7 +5,7 @@
   netauto plan [--base REF]      show what would change on each device and write build/
   netauto inventory              print the Ansible inventory
   netauto routerdb               print Oxidized's router.db
-  netauto gui [--port 8765]      open the NetAuto console in your browser
+  netauto gui [--debug]          open the NetAuto console in your browser
 """
 
 from __future__ import annotations
@@ -131,8 +131,10 @@ def gui(args) -> int:
     if not gui_root.is_dir():
         fail(f"GUI files not found in {gui_root}")
         return 1
+    from _runtime import load_config
+    load_config()                       # MikroTik, Zabbix, GitHub token ... from the shared netops config
     return serve(Path(args.repo), gui_root, template_root() / "scripts", VERSION,
-                 port=args.port, open_browser=not args.no_browser)
+                 port=args.port, open_browser=not args.no_browser, debug=args.debug)
 
 
 def main(argv=None) -> int:
@@ -154,6 +156,7 @@ def main(argv=None) -> int:
     g.add_argument("--port", type=int, default=None,
                    help="default 8765, or any free port if 8765 is taken; 0 = any free port")
     g.add_argument("--no-browser", action="store_true", help="only print the address")
+    g.add_argument("--debug", action="store_true", help="print every request, job and error in this terminal")
     args = ap.parse_args(argv)
     return {"init": init, "validate": validate, "plan": plan, "inventory": inventory, "routerdb": routerdb,
             "gui": gui}[args.cmd](args)

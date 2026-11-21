@@ -28,22 +28,39 @@ netauto init my-network                       # a new, ready repo for VLAN chang
 
 ## The NetAuto console (GUI)
 
-A browser console for the whole repo. It plays each workflow step by step on a network map, with the events in a table underneath. It also shows your devices and VLANs, and runs `validate` and `plan` on your data.
+A browser console for the whole repo: watch the workflows, and run the real network tools from one place.
 
 ```bash
-netauto gui                       # or: python apps/netauto_cli.py gui
+pip install pyyaml
+python apps/netauto_cli.py gui            # or: netauto gui
 ```
 
-It opens `http://127.0.0.1:8765/` in your browser. If port 8765 is taken or blocked (Windows reserves some port ranges for Hyper-V, WSL and Docker), it picks a free port and prints the address. Use `--port <n>` for a fixed port, `--repo <folder>` for another repo, and `--no-browser` to only print the address.
+It opens `http://127.0.0.1:8765/` (or a free port if 8765 is taken, as on some Windows PCs). Add `--debug` to print every request, job and error in the terminal, `--repo <folder>` for another repo, `--port <n>` for a fixed port.
 
-| Page | What it shows |
+| Page | What it does |
 | --- | --- |
-| **Workflows** | The six workflows, one per program. Each has a network map (or a sequence diagram), the step details, and an event flow with Play, Step and Reset. Press `?` for keyboard shortcuts |
+| **Workflows** | Plays the six workflows step by step on a network map, with the events underneath |
+| **Tools** | **Wi-Fi scan** (networks, signal, channels, open/WEP warnings), **Network scan** with nmap (devices, open ports, services, OS guess), **Packet capture** with Wireshark's tshark (live table, protocols, top talkers, `.pcapng` download, *Open in Wireshark*), **Ping**, **Trace route**, **Zabbix** (open problems, hosts) and **Git & GitHub** (status, fetch, pull, open PRs, Actions runs) |
 | **Inventory** | `data/devices.yml` and the VLANs per site |
-| **Change plan** | Runs the checks, and builds the plan against any Git ref (for example `HEAD` or `deployed/utrecht`) with the commands per device |
-| **Programs** | Each program and its most-used commands |
+| **Change plan** | Runs the checks, and builds the plan against any Git ref |
+| **Programs** | Each program with a **Run check** button that tests its config and connections |
+| **Diagnostics** | **Run all checks**: Python, every tool, capture rights, the repo data, Git, the connection to GitHub, and every service you set up. Each failure comes with a fix. **Run test suite** runs all unit tests. The **debug log** shows every request, job and error (browser errors too); **Copy debug report** and **Report a bug** (opens a prefilled GitHub issue) |
+| **Settings** | MikroTik, Zabbix, GitHub token, GitLab, LibreNMS, NetBox, TheHive, OPNsense, CrowdSec, notifications. Saved in the shared netops config file; secrets are never shown again. **Test connections** checks them right away |
 
-The console only reads. It writes nothing, touches no device, and only answers requests from this computer (`127.0.0.1`). You can also open `gui/index.html` straight from disk to play the workflows without the server.
+### What to install for the tools
+
+| Tool | Windows | macOS | Linux |
+| --- | --- | --- | --- |
+| nmap | `winget install Insecure.Nmap` | `brew install nmap` | `sudo apt install nmap` |
+| Wireshark + tshark | `winget install WiresharkFoundation.Wireshark` (keep TShark and Npcap ticked) | `brew install --cask wireshark` | `sudo apt install tshark` |
+| Wi-Fi scan | built in (`netsh`). Windows 11 needs *Settings > Privacy & security > Location* switched on for desktop apps | built in; allow Location for Terminal | `nmcli` (NetworkManager) |
+| Git | `winget install Git.Git` | `xcode-select --install` | `sudo apt install git` |
+
+The Diagnostics page tells you which ones are missing. nmap's OS detection needs an administrator or root terminal; captures on Linux need root or the `wireshark` group.
+
+### Safety
+
+The console only listens on `127.0.0.1`, only answers requests for a local host name, and every API call needs a token that is put into the page when it loads, so other web sites cannot use it. Scan targets, capture filters and interfaces are checked before they reach nmap or tshark, and no command goes through a shell. Scans are limited to /20 (4096 addresses). Git can fetch and fast-forward pull, never push. Only scan networks you own or may test.
 
 ## More workflows
 
@@ -73,9 +90,9 @@ Besides changes, the repo has six setups for **running** the network. They all f
 | `scripts/oxidized_routerdb.py` | Generates Oxidized's `router.db` from `devices.yml` |
 | `oxidized/config` | Example Oxidized config (Git output, REST API) |
 | `.gitlab-ci.yml` | The pipeline |
-| `tests/` | 81 tests: the checks, the plan, the workflows, the programs and the console |
+| `tests/` | 102 tests: the checks, the plan, the workflows, the programs and the console |
 | `apps/` | One program per workflow, with a setup wizard |
-| `gui/` | The NetAuto console: `netauto gui` serves it (`apps/_gui.py`) |
+| `gui/` | The NetAuto console. `netauto gui` serves it: `apps/_gui.py` (server), `_toolkit.py` (nmap, tshark, Wi-Fi, ping), `_jobs.py` (background jobs, debug log), `_diag.py` (diagnostics, Git/GitHub, services, settings) |
 | `tools/build_executables.py` | Builds the programs (PyInstaller or .pyz) |
 | `workflows/` | Six more automation setups for running the network (see below) |
 

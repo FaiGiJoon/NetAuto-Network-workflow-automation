@@ -9,6 +9,7 @@
   const $$ = (s, root = document) => Array.from(root.querySelectorAll(s));
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const TOKEN = (document.querySelector('meta[name="netauto-token"]') || {}).content || "";
 
   // name, light colour, dark colour
   const PROTO = {
@@ -482,7 +483,7 @@
 
   // ------------------------------------------------------------------ pages
   function setPage(p) {
-    if (!["workflows", "inventory", "plan", "programs"].includes(p)) p = "workflows";
+    if (!["workflows", "tools", "inventory", "plan", "programs", "diagnostics", "settings"].includes(p)) p = "workflows";
     if (p !== "workflows") stop();
     state.page = p;
     $$(".tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.page === p)));
@@ -493,15 +494,20 @@
     if (p === "plan") $("#plan-offline").hidden = state.live;
     if (p === "plan") $$("#page-plan button.primary").forEach((b) => { b.disabled = !state.live; });
     if (p === "programs") renderPrograms();
+    $$(".live-only-note").forEach((el) => { el.hidden = state.live; });
+    const extra = window.NETAUTO_PAGES && window.NETAUTO_PAGES[p];
+    if (extra) extra();
   }
 
   async function api(path, body) {
-    const opts = body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+    const headers = { "X-NetAuto-Token": TOKEN };
+    const opts = body === undefined ? { headers } : { method: "POST", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(body) };
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 20000);
     try {
       const r = await fetch(path, { ...opts, signal: ctrl.signal });
       const data = await r.json();
+      if (!r.ok && data && data.errors) { const err = new Error(data.errors.join(" ")); err.status = r.status; err.data = data; throw err; }
       return data;
     } finally { clearTimeout(t); }
   }
@@ -520,7 +526,7 @@
     el.classList.toggle("live", live);
     $("#conn-text").textContent = live ? `Live · netauto ${state.status.version}` : "Demo mode";
     el.title = live ? `Repo: ${state.status.repo}` : "Start with `netauto gui` for live data, checks and plans";
-    if (state.page === "plan") setPage("plan");
+    if (state.page !== "workflows") setPage(state.page);
   }
 
   async function loadInventory() {
@@ -560,7 +566,7 @@
       out.innerHTML = r.ok
         ? `<div class="okline"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5 9-10"/></svg>${esc(r.summary)}</div>`
         : `<div class="badline">${esc(r.summary)}</div><ul>${r.errors.map((e) => `<li>${esc(e)}</li>`).join("")}</ul>`;
-    } catch (e) { out.innerHTML = `<div class="badline">The server did not answer: ${esc(e.message)}</div>`; }
+    } catch (e) { out.innerHTML = `<div class="badline">${esc(e.status ? e.message : "The server did not answer: " + e.message)}</div>`; }
   }
 
   function describeVlan(v) {
@@ -588,14 +594,17 @@
           ${d.remove.map((v) => `<li class="remove"><b>REMOVE</b>${esc(describeVlan(v))}</li>`).join("")}</ul>
         <pre class="code"><button class="btn copy" data-copy>Copy</button>${esc(d.commands.join("\n"))}</pre></div>`).join("");
       out.innerHTML = html;
-    } catch (e) { out.innerHTML = `<div class="card"><p class="badline">The server did not answer: ${esc(e.message)}</p></div>`; }
+    } catch (e) { out.innerHTML = `<div class="card"><p class="badline">${esc(e.status ? e.message : "The server did not answer: " + e.message)}</p></div>`; }
   }
 
   function renderPrograms() {
     const cards = D.scenarios.map((s) => `<div class="card prog"><div class="card-head"><span class="dash"></span>${esc(D.groups.find((g) => g.id === s.group).label)}</div>
       <h3>${esc(s.program)}</h3><div class="wfname">${esc(s.full)}</div><p>${esc(s.overview.summary)}</p>
       <div class="cmds">${s.overview.commands.map((c) => `<code>${esc(c)}</code>`).join("")}</div>
-      <div class="actions"><button class="btn primary" data-play="${s.id}"><svg viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></svg>Play the workflow</button></div></div>`);
+      <div class="actions"><button class="btn primary" data-play="${s.id}"><svg viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></svg>Play the workflow</button>
+        ${s.program === "netauto" ? `<button class="btn" data-goto="plan">Check and plan</button>` :
+          `<button class="btn" data-check="${s.program}" data-action="check" ${state.live ? "" : "disabled title='Needs the local server'"}>Run check</button>`}
+        ${s.program === "netops-soc" ? `<button class="btn" data-check="netops-soc" data-action="test" ${state.live ? "" : "disabled"}>Test with a sample alert</button>` : ""}</div></div>`);
     $("#programs").innerHTML = cards.join("");
   }
 
@@ -658,6 +667,10 @@
       navigator.clipboard?.writeText(text).then(() => { b.textContent = "Copied"; setTimeout(() => { b.textContent = "Copy"; }, 1200); });
     });
     $("#programs").addEventListener("click", (e) => {
+      const chk = e.target.closest("[data-check]");
+      if (chk) { window.NETAUTO_PAGES.runProgram(chk.dataset.check, chk.dataset.action); return; }
+      const go = e.target.closest("[data-goto]");
+      if (go) { setPage(go.dataset.goto); return; }
       const b = e.target.closest("[data-play]");
       if (!b) return;
       setPage("workflows");
@@ -710,5 +723,14 @@
   $("#seq").hidden = state.view !== "sequence";
   setPage(location.hash.slice(1) || "workflows");
   checkLive();
-  window.NETAUTO_APP = { state, go: manual, select: selectScenario, setView, setTheme, setPage };
+  // Report browser errors to the debug log on the Diagnostics page.
+  const reportError = (message, detail) => {
+    if (!state.live) return;
+    fetch("api/debug/client", { method: "POST", headers: { "Content-Type": "application/json", "X-NetAuto-Token": TOKEN },
+      body: JSON.stringify({ message: String(message).slice(0, 500), detail: String(detail || "").slice(0, 4000) }) }).catch(() => {});
+  };
+  window.addEventListener("error", (e) => reportError(e.message, `${e.filename}:${e.lineno}:${e.colno} ${(e.error && e.error.stack) || ""}`));
+  window.addEventListener("unhandledrejection", (e) => reportError(`Unhandled: ${(e.reason && e.reason.message) || e.reason}`, e.reason && e.reason.stack));
+
+  window.NETAUTO_APP = { state, go: manual, select: selectScenario, setView, setTheme, setPage, api, esc, $, $$, color, pname, PROTO };
 })();
