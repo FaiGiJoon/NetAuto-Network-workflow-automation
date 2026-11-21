@@ -30,7 +30,7 @@ APPS = {
     "netops-crowdsec": "netops_crowdsec.py",
     "netops-homelab": "netops_homelab.py",
 }
-NETAUTO_ITEMS = ["data", "scripts", "ansible", "oxidized", "tests/test_pipeline.py", ".gitlab-ci.yml",
+NETAUTO_ITEMS = ["data", "scripts", "gui", "ansible", "oxidized", "tests/test_pipeline.py", ".gitlab-ci.yml",
                  ".gitignore", "requirements.txt", "requirements-deploy.txt", "README.md"]
 IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc")
 

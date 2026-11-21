@@ -26,6 +26,25 @@ sudo ./netops-ids-linux-x86_64 setup          # or: netops-ids-windows-x86_64.ex
 netauto init my-network                       # a new, ready repo for VLAN changes
 ```
 
+## The NetAuto console (GUI)
+
+A browser console for the whole repo. It plays each workflow step by step on a network map, with the events in a table underneath. It also shows your devices and VLANs, and runs `validate` and `plan` on your data.
+
+```bash
+netauto gui                       # or: python apps/netauto_cli.py gui
+```
+
+It opens `http://127.0.0.1:8765/` in your browser. Use `--port 0` for any free port, `--repo <folder>` for another repo, and `--no-browser` to only print the address.
+
+| Page | What it shows |
+| --- | --- |
+| **Workflows** | The six workflows, one per program. Each has a network map (or a sequence diagram), the step details, and an event flow with Play, Step and Reset. Press `?` for keyboard shortcuts |
+| **Inventory** | `data/devices.yml` and the VLANs per site |
+| **Change plan** | Runs the checks, and builds the plan against any Git ref (for example `HEAD` or `deployed/utrecht`) with the commands per device |
+| **Programs** | Each program and its most-used commands |
+
+The console only reads. It writes nothing, touches no device, and only answers requests from this computer (`127.0.0.1`). You can also open `gui/index.html` straight from disk to play the workflows without the server.
+
 ## More workflows
 
 Besides changes, the repo has six setups for **running** the network. They all follow detect, decide, act, record, and share one safety library. Details are in [workflows/README.md](workflows/README.md).
@@ -54,8 +73,9 @@ Besides changes, the repo has six setups for **running** the network. They all f
 | `scripts/oxidized_routerdb.py` | Generates Oxidized's `router.db` from `devices.yml` |
 | `oxidized/config` | Example Oxidized config (Git output, REST API) |
 | `.gitlab-ci.yml` | The pipeline |
-| `tests/` | 71 tests: the checks, the plan, the workflows and the programs |
+| `tests/` | 81 tests: the checks, the plan, the workflows, the programs and the console |
 | `apps/` | One program per workflow, with a setup wizard |
+| `gui/` | The NetAuto console: `netauto gui` serves it (`apps/_gui.py`) |
 | `tools/build_executables.py` | Builds the programs (PyInstaller or .pyz) |
 | `workflows/` | Six more automation setups for running the network (see below) |
 
