@@ -104,6 +104,49 @@ class GuiServerTests(unittest.TestCase):
         self.assertFalse(_host_is_local(None))
 
 
+class PortFallbackTests(unittest.TestCase):
+    """If the default port cannot be used, serve() falls back to a free port."""
+
+    def test_falls_back_when_default_port_is_busy(self):
+        import socket
+        from unittest import mock
+        import _gui
+        blocker = socket.socket()
+        blocker.bind(("127.0.0.1", 0))
+        blocker.listen(1)
+        busy = blocker.getsockname()[1]
+        started = {}
+
+        def fake_forever(self_server):
+            started["port"] = self_server.server_address[1]
+            raise KeyboardInterrupt
+
+        try:
+            with mock.patch.object(_gui, "DEFAULT_PORT", busy), \
+                 mock.patch.object(_gui.ThreadingHTTPServer, "serve_forever", fake_forever), \
+                 mock.patch("builtins.print"):
+                rc = _gui.serve(ROOT, ROOT / "gui", ROOT / "scripts", "test", open_browser=False)
+        finally:
+            blocker.close()
+        self.assertEqual(rc, 0)
+        self.assertNotEqual(started["port"], busy)
+
+    def test_explicit_busy_port_fails(self):
+        import socket
+        from unittest import mock
+        import _gui
+        blocker = socket.socket()
+        blocker.bind(("127.0.0.1", 0))
+        blocker.listen(1)
+        try:
+            with mock.patch("builtins.print"):
+                rc = _gui.serve(ROOT, ROOT / "gui", ROOT / "scripts", "test",
+                                port=blocker.getsockname()[1], open_browser=False)
+        finally:
+            blocker.close()
+        self.assertEqual(rc, 1)
+
+
 class ScenarioDataTests(unittest.TestCase):
     """Every event in gui/scenarios.js must point at nodes and steps that exist."""
 

@@ -34,7 +34,7 @@ A browser console for the whole repo. It plays each workflow step by step on a n
 netauto gui                       # or: python apps/netauto_cli.py gui
 ```
 
-It opens `http://127.0.0.1:8765/` in your browser. Use `--port 0` for any free port, `--repo <folder>` for another repo, and `--no-browser` to only print the address.
+It opens `http://127.0.0.1:8765/` in your browser. If port 8765 is taken or blocked (Windows reserves some port ranges for Hyper-V, WSL and Docker), it picks a free port and prints the address. Use `--port <n>` for a fixed port, `--repo <folder>` for another repo, and `--no-browser` to only print the address.
 
 | Page | What it shows |
 | --- | --- |

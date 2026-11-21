@@ -151,7 +151,8 @@ def main(argv=None) -> int:
             p.add_argument("--out")
     g = sub.add_parser("gui", help="open the NetAuto console in your browser")
     g.add_argument("--repo", default=".")
-    g.add_argument("--port", type=int, default=8765, help="0 = any free port")
+    g.add_argument("--port", type=int, default=None,
+                   help="default 8765, or any free port if 8765 is taken; 0 = any free port")
     g.add_argument("--no-browser", action="store_true", help="only print the address")
     args = ap.parse_args(argv)
     return {"init": init, "validate": validate, "plan": plan, "inventory": inventory, "routerdb": routerdb,

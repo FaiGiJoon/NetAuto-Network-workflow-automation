@@ -183,13 +183,27 @@ def make_server(repo: Path, gui_root: Path, scripts: Path, version: str, port: i
     return ThreadingHTTPServer(("127.0.0.1", port), make_handler(api, gui_root))
 
 
-def serve(repo: Path, gui_root: Path, scripts: Path, version: str, port: int = 8765,
+DEFAULT_PORT = 8765
+
+
+def serve(repo: Path, gui_root: Path, scripts: Path, version: str, port: int | None = None,
           open_browser: bool = True) -> int:
+    """Start the console. Without an explicit port it tries 8765 and, if that port
+    is taken or blocked (on Windows, Hyper-V/WSL/Docker reserve port ranges and
+    binding to them fails with WinError 10013), falls back to any free port."""
+    wanted = DEFAULT_PORT if port is None else port
     try:
-        server = make_server(repo, gui_root, scripts, version, port)
+        server = make_server(repo, gui_root, scripts, version, wanted)
     except OSError as exc:
-        print(f"Could not listen on 127.0.0.1:{port}: {exc}. Try --port 0 for any free port.")
-        return 1
+        if port is not None:
+            print(f"Could not listen on 127.0.0.1:{wanted}: {exc}. Try --port 0 for any free port.")
+            return 1
+        print(f"Port {wanted} is not available ({exc.strerror or exc}); using a free port instead.")
+        try:
+            server = make_server(repo, gui_root, scripts, version, 0)
+        except OSError as exc2:
+            print(f"Could not listen on 127.0.0.1: {exc2}")
+            return 1
     url = f"http://127.0.0.1:{server.server_address[1]}/"
     print(f"NetAuto console running at {url}  (repo: {repo.resolve()})")
     print("Press Ctrl+C to stop.")
