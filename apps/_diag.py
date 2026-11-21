@@ -460,6 +460,8 @@ SETTINGS = [
     ("MikroTik", "MIKROTIK_USER", "User", False, "netops"),
     ("MikroTik", "MIKROTIK_PASSWORD", "Password", True, ""),
     ("MikroTik", "MIKROTIK_VERIFY_TLS", "Check TLS certificate (true/false)", False, "true"),
+    ("MikroTik", "MIKROTIK_PORT", "REST API port (empty = 443)", False, "443"),
+    ("MikroTik", "MIKROTIK_SCHEME", "https, or http for a lab only", False, "https"),
     ("Zabbix", "ZABBIX_URL", "Web address", False, "http://zabbix.local:8080"),
     ("Zabbix", "ZABBIX_TOKEN", "API token", True, ""),
     ("Zabbix", "ZABBIX_VERIFY_TLS", "Check TLS certificate (true/false)", False, "true"),

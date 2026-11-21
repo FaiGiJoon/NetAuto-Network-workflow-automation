@@ -40,6 +40,7 @@ It opens `http://127.0.0.1:8765/` (or a free port if 8765 is taken, as on some W
 | Page | What it does |
 | --- | --- |
 | **Workflows** | Plays the six workflows step by step on a network map, with the events underneath |
+| **Tools: Network check-up** | Your automated network engineer. Tests gateway and internet (loss, latency), DNS and the DNS servers in use, HTTPS; your Wi-Fi (signal, security, crowded channel and the best channel 1/6/11); every device on your subnet (nmap) for risky open ports (Telnet, FTP, RDP, VNC, plain MikroTik API) and devices that were not there last time; and audits your MikroTik (telnet/ftp/api/www services, UPnP, firewall input drop rule, open DNS resolver, SSH strong-crypto, neighbour discovery and MAC server on the WAN, the default admin user, interface errors, RouterOS updates). Gives a score out of 100, a fix for every finding, and **Fix it** buttons for safe router fixes: you see the exact REST calls first, and nothing changes while dry run is on |
 | **Tools** | **Wi-Fi scan** (networks, signal, channels, open/WEP warnings), **Network scan** with nmap (devices, open ports, services, OS guess), **Packet capture** with Wireshark's tshark (live table, protocols, top talkers, `.pcapng` download, *Open in Wireshark*), **Ping**, **Trace route**, **Zabbix** (open problems, hosts) and **Git & GitHub** (status, fetch, pull, open PRs, Actions runs) |
 | **Inventory** | `data/devices.yml` and the VLANs per site |
 | **Change plan** | Runs the checks, and builds the plan against any Git ref |
@@ -47,11 +48,15 @@ It opens `http://127.0.0.1:8765/` (or a free port if 8765 is taken, as on some W
 | **Diagnostics** | **Run all checks**: Python, every tool, capture rights, the repo data, Git, the connection to GitHub, and every service you set up. Each failure comes with a fix. **Run test suite** runs all unit tests. The **debug log** shows every request, job and error (browser errors too); **Copy debug report** and **Report a bug** (opens a prefilled GitHub issue) |
 | **Settings** | MikroTik, Zabbix, GitHub token, GitLab, LibreNMS, NetBox, TheHive, OPNsense, CrowdSec, notifications. Saved in the shared netops config file; secrets are never shown again. **Test connections** checks them right away |
 
+### Look
+
+Omarchy style by default: tiled windows with square corners and a lit border on the active tile, a waybar-like top bar with numbered workspaces (keys `1` to `7`) and a clock, JetBrains Mono everywhere (bundled, works offline). `Y` switches theme: Tokyo Night, Catppuccin, Everforest, Gruvbox, Nord, or the original Classic look. `T` switches to light (Catppuccin Latte).
+
 ### What to install for the tools
 
 | Tool | Windows | macOS | Linux |
 | --- | --- | --- | --- |
-| nmap | `winget install Insecure.Nmap` | `brew install nmap` | `sudo apt install nmap` |
+| nmap | `winget install Insecure.Nmap`, or the **Install** button on the Tools page | `brew install nmap` | `sudo apt install nmap` |
 | Wireshark + tshark | `winget install WiresharkFoundation.Wireshark` (keep TShark and Npcap ticked) | `brew install --cask wireshark` | `sudo apt install tshark` |
 | Wi-Fi scan | built in (`netsh`). Windows 11 needs *Settings > Privacy & security > Location* switched on for desktop apps | built in; allow Location for Terminal | `nmcli` (NetworkManager) |
 | Git | `winget install Git.Git` | `xcode-select --install` | `sudo apt install git` |
@@ -90,9 +95,9 @@ Besides changes, the repo has six setups for **running** the network. They all f
 | `scripts/oxidized_routerdb.py` | Generates Oxidized's `router.db` from `devices.yml` |
 | `oxidized/config` | Example Oxidized config (Git output, REST API) |
 | `.gitlab-ci.yml` | The pipeline |
-| `tests/` | 102 tests: the checks, the plan, the workflows, the programs and the console |
+| `tests/` | 107 tests: the checks, the plan, the workflows, the programs and the console |
 | `apps/` | One program per workflow, with a setup wizard |
-| `gui/` | The NetAuto console. `netauto gui` serves it: `apps/_gui.py` (server), `_toolkit.py` (nmap, tshark, Wi-Fi, ping), `_jobs.py` (background jobs, debug log), `_diag.py` (diagnostics, Git/GitHub, services, settings) |
+| `gui/` | The NetAuto console. `netauto gui` serves it: `apps/_gui.py` (server), `_toolkit.py` (nmap, tshark, Wi-Fi, ping), `_jobs.py` (background jobs, debug log), `_diag.py` (diagnostics, Git/GitHub, services, settings), `_engineer.py` (the network check-up and router fixes); `gui/fonts/` JetBrains Mono (OFL) |
 | `tools/build_executables.py` | Builds the programs (PyInstaller or .pyz) |
 | `workflows/` | Six more automation setups for running the network (see below) |
 

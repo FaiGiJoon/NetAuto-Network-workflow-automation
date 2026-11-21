@@ -183,6 +183,13 @@ class ApiTests(ServerCase):
         status, ctype, body = self.request("GET", f"/api/files/{name}")
         self.assertEqual((status, body), (200, b"\x0a\x0d\x0d\x0a"))
 
+    def test_fix_endpoint_previews_and_refuses_unknown(self):
+        status, body = self.api("POST", "/api/fix", {"action": "mt-upnp-off", "params": {}, "apply": False})
+        self.assertEqual(status, 200)
+        self.assertIn("ip/upnp/set", body["commands"][0])
+        self.assertEqual(self.api("POST", "/api/fix", {"action": "nope", "apply": True})[0], 400)
+        self.assertEqual(self.api("POST", "/api/jobs", {"kind": "install", "params": {"tool": "evil"}})[0], 400)
+
     def test_settings_round_trip_never_returns_secrets(self):
         status, body = self.api("POST", "/api/settings", {"values": {"ZABBIX_URL": "http://zbx.local", "ZABBIX_TOKEN": "s3cret",
                                                                       "NOT_A_SETTING": "x"}})
@@ -273,6 +280,87 @@ class DiagnosticsTests(unittest.TestCase):
         self.assertEqual(_diag.github_slug("git@github.com:Owner/repo.git"), "Owner/repo")
         self.assertEqual(_diag.github_slug("https://github.com/Owner/repo"), "Owner/repo")
         self.assertIsNone(_diag.github_slug("https://gitlab.com/a/b"))
+
+
+class EngineerTests(unittest.TestCase):
+    """The automated network engineer: MikroTik audit and fixes against a fake router."""
+
+    def setUp(self):
+        sys.path.insert(0, str(ROOT / "tests"))
+        from fake_mikrotik import start_fake_mikrotik
+        self.server, self.state, self.calls = start_fake_mikrotik()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.env = mock.patch.dict(os.environ, {
+            "MIKROTIK_HOST": "127.0.0.1", "MIKROTIK_PORT": str(self.server.server_address[1]), "MIKROTIK_SCHEME": "http",
+            "MIKROTIK_USER": "netops", "MIKROTIK_PASSWORD": "x", "NETOPS_DRY_RUN": "true"})
+        self.env.start()
+        self.statedir = mock.patch("_runtime.default_state_dir", return_value=Path(self.tmp.name))
+        self.statedir.start()
+
+    def tearDown(self):
+        self.statedir.stop()
+        self.env.stop()
+        self.server.shutdown()
+        self.server.server_close()
+        self.tmp.cleanup()
+
+    def audit(self):
+        import _engineer
+        from _jobs import Job
+        rep = _engineer.Report(Job("checkup", "test"))
+        _engineer.check_mikrotik(rep)
+        return {f["title"]: f for f in rep.findings}, rep
+
+    def test_audit_finds_every_planted_problem(self):
+        found, rep = self.audit()
+        titles = " | ".join(found)
+        for expected in ("Service 'telnet' is enabled", "Service 'ftp' is enabled", "Plain API (8728) is enabled",
+                         "UPnP is enabled", "No drop rule in the firewall input chain", "SSH allows weak ciphers",
+                         "The default 'admin' user is active", "Interface ether3 has 5333 errors",
+                         "RouterOS 7.16.1 is available", "Neighbour discovery runs on every interface",
+                         "The router answers DNS for the whole internet"):
+            self.assertIn(expected, titles)
+        self.assertLess(rep.score(), 50)
+
+    def test_fix_preview_dry_run_and_apply(self):
+        import _engineer
+        from _jobs import DebugLog
+        log = DebugLog()
+        preview = _engineer.apply_fix("mt-service-off", {"name": "telnet"}, False, log)
+        self.assertFalse(preview["applied"])
+        self.assertIn("ip/service/telnet", preview["commands"][0])
+        dry = _engineer.apply_fix("mt-service-off", {"name": "telnet"}, True, log)
+        self.assertFalse(dry["applied"])
+        self.assertFalse([c for c in self.calls if c[0] == "PATCH"])
+        os.environ["NETOPS_DRY_RUN"] = "false"
+        done = _engineer.apply_fix("mt-service-off", {"name": "telnet"}, True, log)
+        self.assertTrue(done["applied"])
+        self.assertEqual(self.state["ip/service"][0]["disabled"], "true")
+        _engineer.apply_fix("mt-upnp-off", {}, True, log)
+        self.assertEqual(self.state["ip/upnp"]["enabled"], "no")
+        found, _ = self.audit()
+        self.assertNotIn("Service 'telnet' is enabled", found)
+        self.assertNotIn("UPnP is enabled", found)
+        with self.assertRaises(tk.BadInput):
+            _engineer.apply_fix("mt-service-off", {"name": "ssh"}, True, log)
+        with self.assertRaises(tk.BadInput):
+            _engineer.apply_fix("rm-rf", {}, True, log)
+
+    def test_device_baseline(self):
+        import _engineer
+        self.assertEqual(_engineer.load_baseline(), {})
+        _engineer.save_baseline([{"ip": "192.168.1.2", "mac": "AA:BB:CC:00:00:01", "vendor": "x", "hostname": ""}])
+        known = _engineer.load_baseline()
+        self.assertIn("aa:bb:cc:00:00:01", known)
+
+    def test_ipconfig_dns_any_language(self):
+        import _engineer
+        text = """   DNS Servers . . . . . . . . . . . : fe80::1%12
+                                       192.168.1.1
+   NetBIOS over Tcpip. . . . . . . . : Enabled
+   DNS-servers . . . . . . . . . . . : 10.0.0.1
+   Primaire WINS-server. . . . . . . : 10.0.0.9"""
+        self.assertEqual(_engineer.parse_ipconfig_dns(text), ["fe80::1", "192.168.1.1", "10.0.0.1"])
 
 
 class ParserTests(unittest.TestCase):

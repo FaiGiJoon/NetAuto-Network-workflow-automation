@@ -13,7 +13,7 @@
   const errText = (e) => (e && e.message) || String(e);
 
   const S = {
-    tool: localStorage.getItem("netauto-tool") || "wifi",
+    tool: localStorage.getItem("netauto-tool") || "checkup",
     tools: null, netinfo: null, ifaces: [], ifaceError: "",
     runs: {},              // tool id -> latest job view (with .all lines)
     extra: {},             // tool id -> extra data (github overview ...)
@@ -56,6 +56,7 @@
 
   // ------------------------------------------------------------------ tool registry
   const TOOLS = [
+    { id: "checkup", name: "Network check-up", sub: "Find and fix problems automatically", need: null },
     { id: "wifi", name: "Wi-Fi scan", sub: "Networks, signal, channels, security", need: "wifi" },
     { id: "nmap", name: "Network scan", sub: "Devices and open ports with nmap", need: "nmap" },
     { id: "capture", name: "Packet capture", sub: "Live packets with Wireshark's tshark", need: "tshark" },
@@ -93,8 +94,12 @@
     if (found(tool.need)) return "";
     const info = S.tools.tools[tool.need];
     return `<div class="warnbox"><b>${esc(tool.name)} needs ${esc(tool.need === "wifi" ? "a Wi-Fi scanner" : tool.need)}, and it was not found.</b>
-      ${info.hint ? `Install it: <code>${esc(info.hint)}</code>` : ""} Then click <button class="linkbtn" data-recheck>check again</button>.</div>`;
+      ${info.hint ? `Install it: <code>${esc(info.hint)}</code>` : ""} Then click <button class="linkbtn" data-recheck>check again</button>.
+      ${canInstall(tool.need) ? `<div class="row-actions"><button class="btn primary" data-install="${esc(tool.need)}">Install ${esc(tool.need)} now</button></div>` : ""}</div>`;
   }
+
+  const canInstall = (need) => S.tools && ["nmap", "tshark", "wireshark", "git"].includes(need) &&
+    ((S.tools.system === "Windows" && (S.tools.tools.winget || {}).found) || (S.tools.system === "Darwin" && (S.tools.tools.brew || {}).found));
 
   // ------------------------------------------------------------------ tools page
   PAGES.tools = async () => {
@@ -104,7 +109,7 @@
         Start the console with <code>python apps/netauto_cli.py gui</code> and open the address it prints.</div>`;
       return;
     }
-    await loadToolInfo();
+    await loadToolInfo(true);
     renderToolList();
     renderTool();
   };
@@ -114,7 +119,16 @@
     const n = S.netinfo || {};
     let form = "";
     const chips = (items) => `<div class="quick">${items.filter((i) => i[1]).map(([label, value]) => `<button type="button" data-fill="${esc(value)}">${esc(label)}</button>`).join("")}</div>`;
-    if (t.id === "wifi") {
+    if (t.id === "checkup") {
+      const mt = S.tools && S.tools.mikrotik;
+      form = `<p class="muted">Your automated network engineer. It tests the connection to your router and the internet, DNS, your Wi-Fi, scans the devices on your network for risky open ports and new devices, and audits your MikroTik. Every finding comes with a fix; router fixes can be applied from here.</p>
+        <div class="checks">
+          <label><input type="checkbox" id="c-wifi" checked> Wi-Fi</label>
+          <label><input type="checkbox" id="c-devices" ${found("nmap") ? "checked" : "disabled"}> Devices on my network ${found("nmap") ? "" : "(needs nmap)"}</label>
+          <label><input type="checkbox" id="c-mikrotik" ${mt ? "checked" : "disabled"}> My MikroTik ${mt ? "" : '(set it up on <button class="linkbtn" data-goto="settings">Settings</button>)'}</label>
+        </div>
+        <div class="row-actions"><button class="btn primary" data-run>Run check-up</button><span class="muted small-text">Takes 20 seconds to a few minutes, depending on the device scan.</span></div>`;
+    } else if (t.id === "wifi") {
       form = `<p class="muted">Lists every Wi-Fi network your computer can hear: name, signal, channel, band and security. Use it to pick a quiet channel and to spot open networks.</p>
         <div class="row-actions"><button class="btn primary" data-run>Scan Wi-Fi</button></div>`;
     } else if (t.id === "nmap") {
@@ -197,6 +211,7 @@
     const t = S.tool;
     const v = (id) => ($(id) || {}).value;
     let kind, params = {};
+    if (t === "checkup") { kind = "checkup"; params = { wifi: !!($("#c-wifi") || {}).checked, devices: !!($("#c-devices") || {}).checked, mikrotik: !!($("#c-mikrotik") || {}).checked }; }
     if (t === "wifi") kind = "wifi";
     if (t === "nmap") { kind = "nmap"; params = { target: v("#f-target"), profile: v("#f-profile") }; }
     if (t === "capture") { kind = "capture"; params = { interface: v("#f-iface"), count: v("#f-count"), seconds: v("#f-seconds"), filter: v("#f-filter") }; }
@@ -236,6 +251,7 @@
   function resultHtml(tool, view) {
     if (!view) return "";
     const r = view.result;
+    if (tool === "checkup" && r) return checkupHtml(r);
     if (tool === "wifi" && r) return wifiHtml(r);
     if (tool === "nmap" && r) return nmapHtml(r);
     if (tool === "capture" && r) return captureHtml(r);
@@ -244,6 +260,63 @@
     if (tool === "zabbix" && r) return zabbixHtml(r);
     if (tool === "git" && r) return gitHtml(r);
     return "";
+  }
+
+  function checkupHtml(r) {
+    const sevName = { bad: "problem", warn: "warning", info: "info", good: "ok" };
+    const sevClass = { bad: "bad", warn: "warn", info: "", good: "ok" };
+    const areas = [];
+    for (const f of r.findings) {
+      let a = areas.find((x) => x.name === f.area);
+      if (!a) areas.push((a = { name: f.area, items: [] }));
+      a.items.push(f);
+    }
+    const order = { bad: 0, warn: 1, info: 2, good: 3 };
+    const tone = r.score >= 90 ? "ok" : r.score >= 60 ? "warn" : "bad";
+    const devices = r.devices || [];
+    const newOnes = devices.filter((d) => d.new);
+    return `<div class="score-row">
+        <div class="score ${tone}"><b>${r.score}</b><span>/100</span><em>${esc(r.grade)}</em></div>
+        <div class="stats">${stat(r.counts.bad, "problems")}${stat(r.counts.warn, "warnings")}${stat(r.counts.good, "ok")}${stat(devices.length, "devices")}</div>
+      </div>
+      ${areas.map((a) => `<div class="card"><div class="card-head">${esc(a.name)}<span class="right">${a.items.filter((f) => f.severity === "bad" || f.severity === "warn").length} to fix</span></div>
+        <table class="grid-table findings"><tbody>${a.items.sort((x, y) => order[x.severity] - order[y.severity]).map((f, i) => `<tr>
+          <td class="sev"><span class="badge ${sevClass[f.severity]}">${sevName[f.severity]}</span></td>
+          <td><b>${esc(f.title)}</b>${f.detail ? `<div class="muted">${esc(f.detail)}</div>` : ""}${f.fix ? `<div class="fix">${esc(f.fix)}</div>` : ""}</td>
+          <td class="nowrap">${f.action ? `<button class="btn small primary" data-fix='${esc(JSON.stringify(f.action))}' data-title="${esc(f.title)}">Fix it</button>` : ""}</td></tr>`).join("")}</tbody></table></div>`).join("")}
+      ${devices.length ? `<div class="card"><div class="card-head">devices on ${esc(r.network.suggested_subnet || "")}<span class="right">${newOnes.length} new</span></div>
+        ${newOnes.length ? `<div class="row-actions"><button class="btn" data-accept>Accept all as known</button></div>` : ""}
+        <div class="table-scroll"><table class="grid-table"><thead><tr><th>address</th><th>name</th><th>mac / vendor</th><th>open risky ports</th><th></th></tr></thead><tbody>
+        ${devices.map((h) => `<tr><td class="mono"><b>${esc(h.ip)}</b> ${h.new ? '<span class="badge warn">new</span>' : ""}</td><td>${esc(h.hostname || "–")}</td>
+          <td class="mono">${esc(h.mac || "")} <span class="muted">${esc(h.vendor || "")}</span></td>
+          <td>${(h.ports || []).map((p) => `<span class="port">${p.port} ${esc(p.service)}</span>`).join(" ") || '<span class="muted">none</span>'}</td>
+          <td class="nowrap"><button class="btn small" data-host="${esc(h.ip)}" data-act="ports">Scan</button></td></tr>`).join("")}</tbody></table></div></div>` : ""}`;
+  }
+
+  async function previewFix(action, title) {
+    const dlg = $("#jobdlg");
+    const apply = $("#jobdlg-apply");
+    $("#jobdlg-title").textContent = `Fix: ${title}`;
+    $("#jobdlg-state").textContent = "";
+    $("#jobdlg-console").textContent = "Loading…";
+    apply.hidden = true;
+    dlg.showModal();
+    try {
+      const pv = await api("api/fix", { action: action.id, params: action.params, apply: false });
+      $("#jobdlg-console").textContent = `${pv.title}\n\nThe console will send these calls to your MikroTik:\n\n  ${pv.commands.join("\n  ")}\n\n` +
+        (pv.dry_run ? "Dry run is ON: clicking Apply only logs what would happen. Turn it off on the Settings page (Dry run = false) to really change the router."
+                    : "Dry run is OFF: clicking Apply changes the router now.");
+      $("#jobdlg-state").innerHTML = pv.dry_run ? '<span class="job-badge cancelled">dry run</span>' : '<span class="job-badge failed">live</span>';
+      apply.hidden = false;
+      apply.onclick = async () => {
+        apply.hidden = true;
+        try {
+          const res = await api("api/fix", { action: action.id, params: action.params, apply: true });
+          $("#jobdlg-console").textContent += `\n\n${res.message}`;
+          $("#jobdlg-state").innerHTML = res.applied ? '<span class="job-badge done">applied</span>' : '<span class="job-badge cancelled">dry run</span>';
+        } catch (e) { $("#jobdlg-console").textContent += `\n\nFailed: ${errText(e)}`; }
+      };
+    } catch (e) { $("#jobdlg-console").textContent = errText(e); }
   }
 
   function wifiHtml(r) {
@@ -366,6 +439,22 @@
       const el = e.target.closest("button, a");
       if (!el) return;
       if (el.hasAttribute("data-run")) return runTool();
+      if (el.dataset.fix) return previewFix(JSON.parse(el.dataset.fix), el.dataset.title);
+      if (el.hasAttribute("data-accept")) {
+        try { const r = await api("api/devices/accept", {}); el.textContent = `Saved: ${r.known} known devices`; el.disabled = true; }
+        catch (err) { alert(errText(err)); }
+        return;
+      }
+      if (el.dataset.install) {
+        const tool = S.tool, name = el.dataset.install;
+        S.runs[tool] = { status: "running", all: [] };
+        paintRun(tool);
+        try {
+          await runJob("install", { tool: name }, (v) => { S.runs[tool] = v; paintRun(tool); });
+          await loadToolInfo(true); renderToolList(); renderTool();
+        } catch (err) { S.runs[tool] = { status: "failed", uiError: errText(err), all: [] }; paintRun(tool); }
+        return;
+      }
       if (el.hasAttribute("data-stop")) { const v = S.runs[S.tool]; if (v && v.id) stopJob(v.id); return; }
       if (el.dataset.git) return runTool(el.dataset.git);
       if (el.hasAttribute("data-ifaces")) return refreshIfaces();
@@ -389,6 +478,7 @@
       if (el.dataset.host) {
         const ip = el.dataset.host, act = el.dataset.act;
         S.tool = act === "ports" ? "nmap" : act === "trace" ? "trace" : "ping";
+        localStorage.setItem("netauto-tool", S.tool);
         renderToolList(); renderTool();
         $("#f-target").value = ip;
         if (act === "ports") $("#f-profile").value = "services";

@@ -43,7 +43,8 @@
     collapsed: false,
     filter: "all",
     query: "",
-    theme: saved.theme || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"),
+    theme: saved.theme || "dark",
+    look: ["tokyo-night", "catppuccin", "everforest", "gruvbox", "nord", "classic"].includes(saved.look) ? saved.look : "tokyo-night",
     leftHidden: !!saved.leftHidden,
     bottomHidden: !!saved.bottomHidden,
     progress: saved.progress || {},
@@ -55,7 +56,7 @@
   let playTimer = null;
 
   const save = () => localStorage.setItem("netauto-gui", JSON.stringify({
-    sid: state.sid, speed: state.speed, view: state.view, theme: state.theme,
+    sid: state.sid, speed: state.speed, view: state.view, theme: state.theme, look: state.look,
     leftHidden: state.leftHidden, bottomHidden: state.bottomHidden, progress: state.progress,
   }));
 
@@ -304,6 +305,7 @@
     const step = curStep();
     $("#now-program").textContent = s.program;
     $("#now-full").textContent = s.full;
+    $("#now-cmd").textContent = state.idx < 0 ? `./${s.program} --help` : `./${s.program} --step ${curStep() + 1}`;
     $("#now-pips").innerHTML = s.steps.map((_, i) => `<i class="${state.idx >= 0 && i < step ? "done" : state.idx >= 0 && i === step ? "on" : ""}"></i>`).join("");
     $("#now-step").textContent = state.idx < 0 ? `${s.steps.length} steps. Press Play to start.` : `Step ${step + 1} of ${s.steps.length}: ${s.steps[step].title}`;
     const stage = state.idx < 0 ? -1 : s.steps[step].stage;
@@ -461,6 +463,39 @@
     if (state.page === "workflows") render();
   }
 
+  // Omarchy themes (tiling-window look) or the original Classic look.
+  const LOOKS = ["tokyo-night", "catppuccin", "everforest", "gruvbox", "nord", "classic"];
+  const LOOK_NAMES = { "tokyo-night": "Tokyo Night", catppuccin: "Catppuccin", everforest: "Everforest", gruvbox: "Gruvbox", nord: "Nord", classic: "Classic" };
+  function applyLook() {
+    const root = document.documentElement;
+    root.dataset.style = state.look === "classic" ? "classic" : "omarchy";
+    root.dataset.palette = state.look;
+    const next = LOOKS[(LOOKS.indexOf(state.look) + 1) % LOOKS.length];
+    $("#style-btn").setAttribute("aria-label", `Theme: ${LOOK_NAMES[state.look]}. Switch to ${LOOK_NAMES[next]}`);
+    $("#style-btn").title = `Theme: ${LOOK_NAMES[state.look]} (Y for ${LOOK_NAMES[next]})`;
+  }
+  function setLook(v) {
+    state.look = LOOKS.includes(v) ? v : "tokyo-night";
+    applyLook();
+    save();
+    toast(`Theme: ${LOOK_NAMES[state.look]}${state.look !== "classic" && state.theme === "light" ? " (light: Latte)" : ""}`);
+    if (state.page === "workflows") render();
+  }
+  const cycleLook = () => setLook(LOOKS[(LOOKS.indexOf(state.look) + 1) % LOOKS.length]);
+  let toastTimer = null;
+  function toast(text) {
+    const el = $("#toast");
+    el.textContent = text;
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.hidden = true; }, 1600);
+  }
+  function tickClock() {
+    const d = new Date();
+    $("#clock").textContent = d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }) + "  " +
+      d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  }
+
   function applyLayout() {
     const w = $("#work");
     w.classList.toggle("no-left", state.leftHidden);
@@ -613,6 +648,7 @@
     $$(".tabs button, .brand").forEach((b) => b.addEventListener("click", (e) => { e.preventDefault(); setPage(b.dataset.page); }));
     window.addEventListener("hashchange", () => setPage(location.hash.slice(1)));
     $("#theme-btn").addEventListener("click", () => setTheme(state.theme === "dark" ? "light" : "dark"));
+    $("#style-btn").addEventListener("click", cycleLook);
     $$(".seg button").forEach((b) => b.addEventListener("click", () => setView(b.dataset.view)));
 
     $("#side-list").addEventListener("click", (e) => {
@@ -684,6 +720,9 @@
       if (typing || $("#keys").open) return;
       if (e.key === "?") { $("#keys").showModal(); return; }
       if (e.key.toLowerCase() === "t") return setTheme(state.theme === "dark" ? "light" : "dark");
+      if (e.key.toLowerCase() === "y") return cycleLook();
+      const pages = ["workflows", "tools", "inventory", "plan", "programs", "diagnostics", "settings"];
+      if (/^[1-7]$/.test(e.key)) { e.preventDefault(); return setPage(pages[+e.key - 1]); }
       if (state.page !== "workflows") return;
       const order = D.scenarios.map((s) => s.id);
       const keyMap = {
@@ -715,6 +754,9 @@
 
   // ------------------------------------------------------------------ start
   document.documentElement.dataset.theme = state.theme;
+  applyLook();
+  tickClock();
+  setInterval(tickClock, 15000);
   $("#theme-btn").setAttribute("aria-label", state.theme === "dark" ? "Switch to light mode" : "Switch to dark mode");
   bind();
   applyLayout();
@@ -732,5 +774,5 @@
   window.addEventListener("error", (e) => reportError(e.message, `${e.filename}:${e.lineno}:${e.colno} ${(e.error && e.error.stack) || ""}`));
   window.addEventListener("unhandledrejection", (e) => reportError(`Unhandled: ${(e.reason && e.reason.message) || e.reason}`, e.reason && e.reason.stack));
 
-  window.NETAUTO_APP = { state, go: manual, select: selectScenario, setView, setTheme, setPage, api, esc, $, $$, color, pname, PROTO };
+  window.NETAUTO_APP = { state, go: manual, select: selectScenario, setView, setTheme, setLook, setPage, toast, api, esc, $, $$, color, pname, PROTO };
 })();

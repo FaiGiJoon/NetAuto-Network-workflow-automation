@@ -39,7 +39,7 @@ KNOWN_PATHS = {
 INSTALL_HINTS = {
     "nmap": {"Windows": "winget install Insecure.Nmap  (or nmap.org/download; tick Npcap)",
              "Darwin": "brew install nmap", "Linux": "sudo apt install nmap"},
-    "tshark": {"Windows": "winget install WiresharkFoundation.Wireshark  (tick TShark and Npcap)",
+    "tshark": {"Windows": "winget install WiresharkFoundation.Wireshark, then install Npcap from npcap.com (capture driver)",
                "Darwin": "brew install --cask wireshark", "Linux": "sudo apt install tshark"},
     "wireshark": {"Windows": "winget install WiresharkFoundation.Wireshark",
                   "Darwin": "brew install --cask wireshark", "Linux": "sudo apt install wireshark"},

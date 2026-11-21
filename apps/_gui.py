@@ -10,8 +10,12 @@ It serves gui/ and a JSON API that runs the real tools:
     POST /api/jobs {"kind": ..., "params": {...}}      start a scan, capture, check ...
     POST /api/jobs/<id>/cancel
 
-Job kinds: ping, traceroute, nmap, wifi, capture, diagnostics, tests, git-status,
-git-fetch, git-pull, github, zabbix, program (the check/test of each netops program).
+Job kinds: checkup (the automated network engineer), ping, traceroute, nmap, wifi,
+capture, install, diagnostics, tests, git-status, git-fetch, git-pull, github,
+zabbix, program (the check/test of each netops program).
+
+    POST /api/fix {"action", "params", "apply"}   preview or apply a check-up fix
+    POST /api/devices/accept                      remember the devices of the last check-up
 
 Safety: it only listens on 127.0.0.1, refuses requests whose Host header is not
 local (DNS rebinding), and every API call must carry the session token that is
@@ -23,6 +27,7 @@ command goes through a shell.
 from __future__ import annotations
 
 import json
+import os
 import re
 import secrets
 import sys
@@ -46,6 +51,8 @@ CONTENT_TYPES = {
     ".json": "application/json",
     ".png": "image/png",
     ".ico": "image/x-icon",
+    ".woff2": "font/woff2",
+    ".txt": "text/plain; charset=utf-8",
 }
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
 SAFE_REF = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/~^@{}-]{0,199}$")
@@ -92,6 +99,7 @@ class Api:
         if str(scripts) not in sys.path:
             sys.path.insert(0, str(scripts))
         self._ifaces: list[dict] = []
+        self.last_devices: list[dict] = []
 
     # ---------------------------------------------------------------- read-only
     def status(self) -> dict:
@@ -138,13 +146,13 @@ class Api:
         return 200, {"ok": True, "errors": [], **result}
 
     def tools(self) -> dict:
-        found = {name: tk.find_tool(name) for name in ("nmap", "tshark", "wireshark", "git", "ping", "docker")}
+        found = {name: tk.find_tool(name) for name in ("nmap", "tshark", "wireshark", "git", "ping", "docker", "winget", "brew")}
         found["traceroute"] = tk.traceroute_tool()
         found["wifi"] = tk.wifi_tool()
         from _runtime import _is_admin
         return {"tools": {k: {"found": bool(v), "path": v or "", "hint": tk.hint("nmcli" if k == "wifi" else k)}
                           for k, v in found.items()},
-                "admin": _is_admin(), "system": tk.SYSTEM, "nmap_profiles": {k: v["label"] for k, v in tk.NMAP_PROFILES.items()}}
+                "admin": _is_admin(), "system": tk.SYSTEM, "mikrotik": bool(os.environ.get("MIKROTIK_HOST")), "nmap_profiles": {k: v["label"] for k, v in tk.NMAP_PROFILES.items()}}
 
     def interfaces(self) -> dict:
         items, err = tk.capture_interfaces()
@@ -213,6 +221,18 @@ class Api:
                         "rows": rows, "summary": tk.capture_summary(rows)}
             job = jobs.start_process("capture", f"Capture on {label}" + (f" ({bpf})" if bpf else ""), cmd,
                                      timeout=seconds + 30, on_done=capture_done)
+        elif kind == "checkup":
+            import _engineer
+            opts = {k: bool(params.get(k, True)) for k in ("wifi", "devices", "mikrotik")}
+
+            def checkup(j):
+                out = _engineer.run_checkup(j, opts, captures_dir())
+                self.last_devices = out.get("devices", [])
+                return out
+            job = jobs.start_function("checkup", "Network check-up", checkup)
+        elif kind == "install":
+            tool = params.get("tool")
+            job = self._install(tool)
         elif kind == "diagnostics":
             import _diag
             job = jobs.start_function("diagnostics", "Diagnostics: test everything", lambda j: _diag.run_all(self.repo, j))
@@ -255,6 +275,21 @@ class Api:
         else:
             raise tk.BadInput(f"Unknown job '{kind}'.")
         return job.view()
+
+    def _install(self, tool):
+        """One-click install where the OS has a package manager we can run without a password."""
+        ids = {"nmap": ("Insecure.Nmap", "nmap"), "tshark": ("WiresharkFoundation.Wireshark", "--cask wireshark"),
+               "wireshark": ("WiresharkFoundation.Wireshark", "--cask wireshark"), "git": ("Git.Git", "git")}
+        if tool not in ids:
+            raise tk.BadInput("Unknown tool.")
+        if tk.IS_WINDOWS and tk.find_tool("winget"):
+            cmd = [tk.find_tool("winget"), "install", "--id", ids[tool][0], "-e", "--accept-package-agreements",
+                   "--accept-source-agreements"]
+        elif tk.IS_MAC and tk.find_tool("brew"):
+            cmd = [tk.find_tool("brew"), "install", *ids[tool][1].split()]
+        else:
+            raise tk.BadInput(f"Install it from a terminal: {tk.hint(tool)}")
+        return self.jobs.start_process("install", f"Install {tool}", cmd, timeout=1800, encoding=tk.console_encoding(cmd[0]))
 
     # ---------------------------------------------------------------- other actions
     def capture_file(self, name: str) -> Path | None:
@@ -434,6 +469,15 @@ def make_handler(api: Api, gui_root: Path):
                 saved = _diag.save_settings(values)
                 api.log.info("settings", f"saved {', '.join(saved['saved']) or 'nothing'}")
                 return self._json(200, {"ok": True, **saved})
+            if path == "/api/fix":
+                import _engineer
+                return self._json(200, _engineer.apply_fix(str(body.get("action", "")), body.get("params") or {},
+                                                           bool(body.get("apply")), api.log))
+            if path == "/api/devices/accept":
+                import _engineer
+                count = _engineer.save_baseline(api.last_devices)
+                api.log.info("devices", f"{len(api.last_devices)} devices accepted, {count} known")
+                return self._json(200, {"ok": True, "known": count})
             if path == "/api/wireshark":
                 return self._json(200, api.open_wireshark(body))
             if path == "/api/debug/client":
