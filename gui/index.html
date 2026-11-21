@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="netauto-token" content="">
   <title>NetAuto Console</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f1b8a'/%3E%3Cpath d='M8 22c4 0 4-12 8-12s4 12 8 12' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="styles.css">
@@ -20,9 +21,12 @@
     </a>
     <nav class="tabs" role="tablist" aria-label="Pages">
       <button role="tab" data-page="workflows" aria-selected="true">Workflows</button>
+      <button role="tab" data-page="tools" aria-selected="false">Tools</button>
       <button role="tab" data-page="inventory" aria-selected="false">Inventory</button>
       <button role="tab" data-page="plan" aria-selected="false">Change plan</button>
       <button role="tab" data-page="programs" aria-selected="false">Programs</button>
+      <button role="tab" data-page="diagnostics" aria-selected="false">Diagnostics</button>
+      <button role="tab" data-page="settings" aria-selected="false">Settings</button>
     </nav>
     <div class="topbar-right">
       <span class="conn" id="conn" title="">
@@ -207,7 +211,80 @@
       <div class="cards" id="programs"></div>
     </div>
   </section>
+
+  <!-- ============================================================ tools -->
+  <section class="page page-tools" id="page-tools" role="tabpanel" hidden>
+    <div class="tools-layout">
+      <aside class="panel tool-list" aria-label="Tools">
+        <div class="panel-head"><span class="dash"></span>Tools</div>
+        <div id="tool-list"></div>
+        <div class="netinfo" id="netinfo"></div>
+      </aside>
+      <section class="tool-main" id="tool-main" aria-live="polite"></section>
+    </div>
+  </section>
+
+  <!-- ============================================================ diagnostics -->
+  <section class="page page-doc" id="page-diagnostics" role="tabpanel" hidden>
+    <div class="doc wide">
+      <div class="doc-head">
+        <div>
+          <div class="eyebrow"><span class="dash"></span>Diagnostics</div>
+          <h1>Test everything</h1>
+          <p class="lede">Checks the tools, capture rights, your repo, the Git and GitHub connection, and every service you set up. Nothing is changed.</p>
+        </div>
+        <div class="head-actions">
+          <button class="btn" id="btn-run-tests">Run test suite</button>
+          <button class="btn primary" id="btn-run-diag">Run all checks</button>
+        </div>
+      </div>
+      <div class="offline-note live-only-note" hidden>Diagnostics need the local server. Start the console with <code>python apps/netauto_cli.py gui</code>.</div>
+      <div class="diag-counts" id="diag-counts"></div>
+      <div id="diag-results"></div>
+      <div class="card" id="tests-card" hidden>
+        <div class="card-head"><span class="dash"></span>Test suite<span class="right" id="tests-state"></span></div>
+        <pre class="console" id="tests-console"></pre>
+      </div>
+      <div class="card">
+        <div class="card-head"><span class="dash"></span>Debug log
+          <span class="right log-tools">
+            <select id="log-level" aria-label="Show"><option value="">everything</option><option value="warn">warnings and errors</option><option value="error">errors only</option></select>
+            <button class="btn small" id="btn-copy-report">Copy debug report</button>
+            <button class="btn small" id="btn-report-bug">Report a bug</button>
+          </span></div>
+        <p class="muted">Every request, job and error since the console started. Start with <code>--debug</code> to also print it in the terminal.</p>
+        <div class="log" id="debug-log"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ settings -->
+  <section class="page page-doc" id="page-settings" role="tabpanel" hidden>
+    <div class="doc wide">
+      <div class="doc-head">
+        <div>
+          <div class="eyebrow"><span class="dash"></span>Settings</div>
+          <h1>Connections</h1>
+          <p class="lede" id="settings-path">The same config file every netops program reads.</p>
+        </div>
+        <div class="head-actions">
+          <button class="btn" id="btn-test-conn">Test connections</button>
+          <button class="btn primary" id="btn-save-settings">Save</button>
+        </div>
+      </div>
+      <div class="offline-note live-only-note" hidden>Settings need the local server. Start the console with <code>python apps/netauto_cli.py gui</code>.</div>
+      <div class="result" id="settings-result"></div>
+      <div class="settings-grid" id="settings"></div>
+    </div>
+  </section>
 </div>
+
+<!-- job output (program checks) -->
+<dialog id="jobdlg" class="wide-dialog" aria-labelledby="jobdlg-title">
+  <div class="panel-head"><span class="dash"></span><span id="jobdlg-title">Job</span><span class="job-state" id="jobdlg-state"></span></div>
+  <pre class="console" id="jobdlg-console"></pre>
+  <div class="dlg-actions"><button class="btn" id="jobdlg-stop" hidden>Stop</button><form method="dialog"><button class="btn primary">Close</button></form></div>
+</dialog>
 
 <!-- keyboard shortcuts -->
 <dialog id="keys" aria-labelledby="keys-title">
@@ -230,5 +307,6 @@
 <script src="scenarios.js"></script>
 <script src="icons.js"></script>
 <script src="app.js"></script>
+<script src="tools.js"></script>
 </body>
 </html>
