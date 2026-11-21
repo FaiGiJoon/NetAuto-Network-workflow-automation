@@ -5,6 +5,7 @@
   netauto plan [--base REF]      show what would change on each device and write build/
   netauto inventory              print the Ansible inventory
   netauto routerdb               print Oxidized's router.db
+  netauto gui [--port 8765]      open the NetAuto console in your browser
 """
 
 from __future__ import annotations
@@ -124,6 +125,16 @@ def routerdb(args) -> int:
     return 0
 
 
+def gui(args) -> int:
+    from _gui import serve
+    gui_root = template_root() / "gui"
+    if not gui_root.is_dir():
+        fail(f"GUI files not found in {gui_root}")
+        return 1
+    return serve(Path(args.repo), gui_root, template_root() / "scripts", VERSION,
+                 port=args.port, open_browser=not args.no_browser)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="netauto", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -138,8 +149,13 @@ def main(argv=None) -> int:
             p.add_argument("--base", help="commit on the devices now (default: nothing = add everything)")
             p.add_argument("--target", help="commit to deploy (default: files on disk)")
             p.add_argument("--out")
+    g = sub.add_parser("gui", help="open the NetAuto console in your browser")
+    g.add_argument("--repo", default=".")
+    g.add_argument("--port", type=int, default=8765, help="0 = any free port")
+    g.add_argument("--no-browser", action="store_true", help="only print the address")
     args = ap.parse_args(argv)
-    return {"init": init, "validate": validate, "plan": plan, "inventory": inventory, "routerdb": routerdb}[args.cmd](args)
+    return {"init": init, "validate": validate, "plan": plan, "inventory": inventory, "routerdb": routerdb,
+            "gui": gui}[args.cmd](args)
 
 
 if __name__ == "__main__":

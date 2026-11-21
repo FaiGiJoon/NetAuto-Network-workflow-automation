@@ -4,7 +4,7 @@ Every workflow is also a single program. Download it, run `setup`, answer a few 
 
 | Program | Workflow | Most used commands |
 | --- | --- | --- |
-| `netauto` | VLAN changes through Git (repo root) | `init <folder>`, `validate`, `plan` |
+| `netauto` | VLAN changes through Git (repo root) | `init <folder>`, `validate`, `plan`, `gui` |
 | `netops-ids` | [1. IDS + Zabbix](../workflows/1-ids-zabbix-autoremediate/) | `setup`, `check`, `run`, `install-suricata`, `zabbix-setup`, `poe-restart` |
 | `netops-soc` | [2. Wazuh SOC](../workflows/2-soc-wazuh-thehive/) | `setup`, `check`, `test`, `install-wazuh` |
 | `netops-metrics` | [3. Prometheus + Grafana](../workflows/3-prometheus-grafana/) | `setup`, `up`, `down`, `check` |
@@ -48,7 +48,7 @@ Windows may show a SmartScreen warning because the files are not code-signed. Ch
 | `netops-metrics` | Asks for your devices (or imports `data/devices.yml`), writes a complete Docker folder (Prometheus, Alertmanager with a secret token, Grafana, SNMP, remediation service) and starts it |
 | `netops-crowdsec` | Registers the bouncer with `cscli` (no copying of keys), tests CrowdSec and the router, adds the drop rule, does a first sync, installs the service |
 | `netops-homelab` | Writes the Docker folder, fills the n8n workflow with your devices and PoE ports, starts it and imports the workflow into n8n |
-| `netauto` | `init` creates a ready repo: example data, CI pipeline, Ansible, tests and a first Git commit |
+| `netauto` | `init` creates a ready repo: example data, CI pipeline, Ansible, tests and a first Git commit. `gui` opens the NetAuto console in your browser |
 
 Every setup starts in **dry-run mode**: the program only says what it would do. Run `setup` again and answer "n" to dry run once you trust it. Running `setup` again is always safe. Your answers are remembered, and nothing is added twice.
 
